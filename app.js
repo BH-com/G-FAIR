@@ -71,6 +71,141 @@ function isWalkable(row, col) {
   return !!gridMap && row >= 1 && row <= gridMap.rows && col >= 1 && col <= gridMap.cols && gridMap.walkableRows[row - 1][col - 1] === "1";
 }
 
+
+const DEPLOYMENT_STATE_PATH = "data/deployment-state.json";
+
+const DEPLOYMENT_STORAGE_KEYS = [
+  "exhibitionGridMap",
+  "exhibitionGridMapOriginal",
+  "exhibitionCustomStart",
+  "exhibitionManagedLocations",
+  "exhibitionImportedCompanies",
+  "exhibitionBoothCorrections",
+  CENTERLINE_OVERRIDE_KEY,
+  CENTERLINE_DELETED_KEY,
+  CENTERLINE_BYPASS_KEY,
+  CENTERLINE_MERGE_KEY,
+  CENTERLINE_CUSTOM_NODE_KEY
+];
+
+function collectDeploymentState() {
+  const storage = {};
+
+  for (const key of DEPLOYMENT_STORAGE_KEYS) {
+    const value = localStorage.getItem(key);
+
+    if (value !== null) {
+      storage[key] = value;
+    }
+  }
+
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    storage
+  };
+}
+
+function downloadDeploymentState() {
+  const state = collectDeploymentState();
+  const blob = new Blob(
+    [JSON.stringify(state, null, 2)],
+    { type: "application/json;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = "deployment-state.json";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+async function applyDeploymentStateIfNeeded() {
+  /*
+   * 이미 현재 브라우저에 작업 데이터가 있으면 그것을 우선 사용한다.
+   * 새 방문자처럼 저장 데이터가 없는 경우에만 GitHub의 배포 데이터를 적용한다.
+   */
+  if (localStorage.getItem("exhibitionGridMap")) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      DEPLOYMENT_STATE_PATH,
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const state = await response.json();
+
+    if (
+      !state ||
+      typeof state.storage !== "object" ||
+      state.storage === null
+    ) {
+      return false;
+    }
+
+    for (const [key, value] of Object.entries(state.storage)) {
+      if (
+        DEPLOYMENT_STORAGE_KEYS.includes(key) &&
+        typeof value === "string"
+      ) {
+        localStorage.setItem(key, value);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.info(
+      "배포 데이터 파일이 없거나 읽지 못했습니다.",
+      error
+    );
+
+    return false;
+  }
+}
+
+function ensureDeploymentExportButton() {
+  if (!isAdminScreen()) return;
+
+  const headerActions = document.querySelector(".header-actions");
+
+  if (
+    !headerActions ||
+    document.querySelector("#exportDeploymentStateBtn")
+  ) {
+    return;
+  }
+
+  const button = document.createElement("button");
+  button.id = "exportDeploymentStateBtn";
+  button.type = "button";
+  button.textContent = "배포 데이터 내보내기";
+  button.title =
+    "현재 브라우저에 저장된 전시장 배치·중앙선·위치 데이터를 JSON으로 저장";
+
+  button.addEventListener("click", () => {
+    downloadDeploymentState();
+
+    alert(
+      "deployment-state.json을 내려받았습니다.\n\n" +
+      "GitHub 저장소의 data 폴더에 이 파일을 올리면 " +
+      "새 방문자에게 현재 작업 상태가 기본값으로 적용됩니다."
+    );
+  });
+
+  headerActions.prepend(button);
+}
+
 function loadStoredGrid() {
   try { gridMap = JSON.parse(localStorage.getItem("exhibitionGridMap") || "null"); }
   catch { gridMap = null; localStorage.removeItem("exhibitionGridMap"); }
@@ -4124,7 +4259,17 @@ $("#xlsxLayoutInput")?.addEventListener("change",e=>{const f=e.target.files?.[0]
 $("#removeXlsxLayoutBtn")?.addEventListener("click",()=>{localStorage.removeItem("exhibitionGridMap");localStorage.removeItem("exhibitionCustomStart");localStorage.removeItem("exhibitionManagedLocations");location.reload();});
 
 (async function init(){
-  loadStoredGrid(); renderAdminLocations();
-  if(gridMap) { renderGrid(); refreshBoothCorrectionOptions(); } else await loadSample();
+  await applyDeploymentStateIfNeeded();
+  loadStoredGrid();
+  renderAdminLocations();
+  ensureDeploymentExportButton();
+
+  if(gridMap) {
+    renderGrid();
+    refreshBoothCorrectionOptions();
+  } else {
+    await loadSample();
+  }
+
   renderResults("");
 })();
