@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ENTRANCE_A",
+    "name": "A출입구",
+    "type": "start",
+    "x": 105,
+    "y": 125,
+    "accessNode": "N11"
+  },
+  {
+    "id": "ENTRANCE_B",
+    "name": "B출입구",
+    "type": "start",
+    "x": 895,
+    "y": 525,
+    "accessNode": "N35"
+  },
+  {
+    "id": "CENTER",
+    "name": "중앙 안내지점",
+    "type": "start",
+    "x": 500,
+    "y": 325,
+    "accessNode": "N23"
+  }
+]
