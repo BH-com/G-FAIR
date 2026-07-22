@@ -1341,11 +1341,9 @@ function renderGrid() {
         // 부스 클릭이 지도 드래그용 pointer capture에 빼앗기지 않도록
         // pointerdown 단계에서 먼저 선택을 확정한다.
         if (!boothLabelEditMode || !isAdminScreen()) {
-          if (!centerlineEditMode && !locationEditMode && !routeDrawMode) {
-            event.preventDefault();
-            event.stopPropagation();
-            selectDestination(item);
-          }
+          // 일반 사용자 화면에서는 pointerdown을 지도에 전달한다.
+          // 실제 부스 선택은 click 단계에서 처리하여 한 손가락 이동과
+          // 두 손가락 핀치 확대가 부스 위에서도 자연스럽게 작동하게 한다.
           return;
         }
         event.preventDefault();
@@ -1450,6 +1448,7 @@ function renderGrid() {
     renderBoothSpecialEffect(group, item, geometry);
     group.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (mapViewport?.shouldSuppressTap?.()) return;
       if (boothLabelEditMode && isAdminScreen()) {
         if (boothSplitMode && selectedBoothLabelId === item.id) {
           splitBoothComponentAtPoint(
@@ -1531,7 +1530,10 @@ function renderSample(destinations, locations) {
     const rect = svgEl("rect", { x: item.x, y: item.y, width: item.width, height: item.height, rx: 8, class: item.type === "booth" ? "booth" : "facility" });
     const text = svgEl("text", { x: item.x + item.width / 2, y: item.y + item.height / 2, class: "map-label" });
     text.textContent = item.booth === "-" ? item.name : item.booth;
-    g.append(rect, text); g.addEventListener("click", () => selectDestination(item));
+    g.append(rect, text); g.addEventListener("click", () => {
+      if (mapViewport?.shouldSuppressTap?.()) return;
+      selectDestination(item);
+    });
     (item.type === "booth" ? boothsLayer : facilitiesLayer).appendChild(g);
   });
   if (startSelect) {

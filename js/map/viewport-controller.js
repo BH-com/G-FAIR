@@ -21,6 +21,9 @@
     let dragStart = null;
     let pinchStartDistance = 0;
     let pinchStartViewBox = null;
+    let gestureMoved = false;
+    let suppressTapUntil = 0;
+    const gestureThreshold = 6;
 
     function normalized(box) {
       const full = getFullViewBox();
@@ -80,6 +83,11 @@
       pointers.set(event.pointerId, event);
       svg.classList.add("dragging");
 
+      if (pointers.size >= 2) {
+        gestureMoved = true;
+        suppressTapUntil = Math.max(suppressTapUntil, performance.now() + 350);
+      }
+
       if (pointers.size === 1) {
         dragStart = {
           clientX: event.clientX,
@@ -104,7 +112,12 @@
       if (hooks.pointerMove?.(event, api) === true) return;
       if (!pointers.has(event.pointerId)) return;
 
+      const previous = pointers.get(event.pointerId);
       pointers.set(event.pointerId, event);
+      if (previous && Math.hypot(event.clientX - previous.clientX, event.clientY - previous.clientY) >= gestureThreshold) {
+        gestureMoved = true;
+        suppressTapUntil = Math.max(suppressTapUntil, performance.now() + 350);
+      }
       const current = getViewBox();
       const full = getFullViewBox();
 
@@ -137,6 +150,9 @@
 
     function onPointerEnd(event) {
       if (hooks.pointerEnd?.(event, api) === true) return;
+      if (gestureMoved || pointers.size >= 2) {
+        suppressTapUntil = Math.max(suppressTapUntil, performance.now() + 350);
+      }
       pointers.delete(event.pointerId);
 
       if (pointers.size === 1) {
@@ -151,7 +167,10 @@
         dragStart = null;
         pinchStartViewBox = null;
         pinchStartDistance = 0;
+        gestureMoved = false;
+        suppressTapUntil = 0;
         svg.classList.remove("dragging");
+        gestureMoved = false;
       }
     }
 
@@ -163,10 +182,10 @@
 
     const listeners = [
       [svg, "wheel", onWheel, { passive: false }],
-      [svg, "pointerdown", onPointerDown],
-      [svg, "pointermove", onPointerMove],
-      [svg, "pointerup", onPointerEnd],
-      [svg, "pointercancel", onPointerEnd]
+      [svg, "pointerdown", onPointerDown, { capture: true }],
+      [svg, "pointermove", onPointerMove, { capture: true }],
+      [svg, "pointerup", onPointerEnd, { capture: true }],
+      [svg, "pointercancel", onPointerEnd, { capture: true }]
     ];
 
     for (const [target, type, handler, settings] of listeners) {
@@ -178,12 +197,18 @@
       fit,
       zoom,
       clientToSvg,
+      shouldSuppressTap() {
+        return performance.now() < suppressTapUntil || pointers.size > 1;
+      },
       resetInteraction() {
         pointers.clear();
         dragStart = null;
         pinchStartViewBox = null;
         pinchStartDistance = 0;
+        gestureMoved = false;
+        suppressTapUntil = 0;
         svg.classList.remove("dragging");
+        gestureMoved = false;
       },
       destroy() {
         for (const [target, type, handler, settings] of listeners) {
