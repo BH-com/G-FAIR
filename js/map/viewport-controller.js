@@ -27,7 +27,10 @@
     let suppressTapUntil = 0;
     let longPressTimer = 0;
     let rotationDegrees = 0;
+    let tiltDegrees = 0;
     const rotationStep = 15;
+    const tiltStep = 15;
+    const maximumTilt = 45;
 
     // 지도 앱의 일반적인 제스처 판별 방식:
     // - 짧고 정지된 입력만 탭
@@ -51,23 +54,55 @@
       return angle;
     }
 
-    function applyRotation(value = rotationDegrees) {
-      rotationDegrees = normalizeAngle(value);
+    function applyMapTransform() {
+      const hasTransform = rotationDegrees !== 0 || tiltDegrees !== 0;
       svg.style.transformOrigin = "50% 50%";
       svg.style.transformBox = "border-box";
-      svg.style.transform = rotationDegrees ? `rotate(${rotationDegrees}deg)` : "";
+      svg.style.willChange = hasTransform ? "transform" : "";
+      svg.style.transform = hasTransform
+        ? `perspective(1200px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg)`
+        : "";
       svg.dataset.rotationDegrees = String(rotationDegrees);
-      const label = document.querySelector("#mapRotationValue");
-      if (label) label.textContent = `${Math.round(rotationDegrees)}°`;
+      svg.dataset.tiltDegrees = String(tiltDegrees);
+
+      const rotationLabel = document.querySelector("#mapRotationValue");
+      if (rotationLabel) rotationLabel.textContent = `${Math.round(rotationDegrees)}°`;
+      const tiltLabel = document.querySelector("#mapTiltValue");
+      if (tiltLabel) tiltLabel.textContent = `${Math.round(tiltDegrees)}°`;
+    }
+
+    function applyRotation(value = rotationDegrees) {
+      rotationDegrees = normalizeAngle(value);
+      applyMapTransform();
       return rotationDegrees;
+    }
+
+    function applyTilt(value = tiltDegrees) {
+      tiltDegrees = clamp(Number(value) || 0, 0, maximumTilt);
+      applyMapTransform();
+      return tiltDegrees;
     }
 
     function rotateBy(delta) {
       return applyRotation(rotationDegrees + Number(delta || 0));
     }
 
+    function tiltBy(delta) {
+      return applyTilt(tiltDegrees + Number(delta || 0));
+    }
+
+    function resetTransform() {
+      rotationDegrees = 0;
+      tiltDegrees = 0;
+      applyMapTransform();
+    }
+
     function resetRotation() {
       return applyRotation(0);
+    }
+
+    function resetTilt() {
+      return applyTilt(0);
     }
 
     function ensureRotationControls() {
@@ -95,10 +130,34 @@
       right.title = "오른쪽으로 15° 회전";
       right.textContent = "↷";
 
-      actions.append(left, value, right);
+      const tiltDown = document.createElement("button");
+      tiltDown.id = "tiltDownBtn";
+      tiltDown.type = "button";
+      tiltDown.setAttribute("aria-label", "지도 기울기 줄이기");
+      tiltDown.title = "기울기 15° 줄이기";
+      tiltDown.textContent = "평면";
+
+      const tiltValue = document.createElement("button");
+      tiltValue.id = "mapTiltValue";
+      tiltValue.type = "button";
+      tiltValue.setAttribute("aria-label", "지도 기울기 초기화");
+      tiltValue.title = "기울기 원위치";
+      tiltValue.textContent = "0°";
+
+      const tiltUp = document.createElement("button");
+      tiltUp.id = "tiltUpBtn";
+      tiltUp.type = "button";
+      tiltUp.setAttribute("aria-label", "지도 기울기 늘리기");
+      tiltUp.title = "기울기 15° 늘리기 (최대 45°)";
+      tiltUp.textContent = "입체";
+
+      actions.append(left, value, right, tiltDown, tiltValue, tiltUp);
       left.addEventListener("click", () => rotateBy(-rotationStep));
       value.addEventListener("click", resetRotation);
       right.addEventListener("click", () => rotateBy(rotationStep));
+      tiltDown.addEventListener("click", () => tiltBy(-tiltStep));
+      tiltValue.addEventListener("click", resetTilt);
+      tiltUp.addEventListener("click", () => tiltBy(tiltStep));
     }
 
     function normalized(box) {
@@ -421,14 +480,17 @@
       if (event.key === "r" || event.key === "R") {
         event.preventDefault();
         rotateBy(event.shiftKey ? -rotationStep : rotationStep);
+      } else if (event.key === "t" || event.key === "T") {
+        event.preventDefault();
+        tiltBy(event.shiftKey ? -tiltStep : tiltStep);
       } else if (event.key === "0") {
         event.preventDefault();
-        resetRotation();
+        resetTransform();
       }
     }
 
     ensureRotationControls();
-    applyRotation(0);
+    resetTransform();
 
     const listeners = [
       [svg, "wheel", onWheel, { passive: false }],
@@ -454,6 +516,13 @@
       getRotation() {
         return rotationDegrees;
       },
+      tiltBy,
+      resetTilt,
+      setTilt: applyTilt,
+      getTilt() {
+        return tiltDegrees;
+      },
+      resetTransform,
       shouldSuppressTap() {
         return performance.now() < suppressTapUntil || pointers.size > 1;
       },
@@ -484,7 +553,9 @@
         }
         api.resetInteraction();
         svg.style.transform = "";
+        svg.style.willChange = "";
         delete svg.dataset.rotationDegrees;
+        delete svg.dataset.tiltDegrees;
       }
     };
 
