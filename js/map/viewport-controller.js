@@ -31,11 +31,13 @@
     // - 짧고 정지된 입력만 탭
     // - 작더라도 같은 방향으로 이어지는 움직임은 드래그
     // - 오래 누르기는 탭으로 처리하지 않음
-    const hardMoveThreshold = 7;
-    const pathMoveThreshold = 10;
-    const trendPathThreshold = 3.5;
-    const longPressDuration = 420;
-    const tapMaximumDuration = 360;
+    // 손가락을 떼는 순간의 미세 흔들림은 탭으로 허용하되,
+    // 실제 이동 의도가 보이면 일찍 드래그로 전환한다.
+    const hardMoveThreshold = 12;
+    const pathMoveThreshold = 20;
+    const trendPathThreshold = 7;
+    const longPressDuration = 600;
+    const tapMaximumDuration = 520;
     const tapSuppressDuration = 500;
     const completedTouchLifetime = 700;
 
@@ -127,6 +129,7 @@
         lastTime: event.timeStamp || performance.now(),
         downTime: performance.now(),
         pathLength: 0,
+        maxDisplacement: 0,
         moveSamples: 0,
         trendScore: 0,
         lastVectorX: 0,
@@ -168,17 +171,19 @@
         event.clientX - track.startX,
         event.clientY - track.startY
       );
+      track.maxDisplacement = Math.max(track.maxDisplacement, displacement);
       const velocity = step / elapsed;
 
       // 큰 이동뿐 아니라 작더라도 같은 방향으로 이어지는 움직임을
       // 사용자의 드래그 의도로 판단한다. 손 떨림처럼 방향이 제각각인
       // 미세 움직임은 탭 후보로 남긴다.
       const hasDirectionalTrend =
-        track.moveSamples >= 2 &&
-        track.trendScore >= 1 &&
-        track.pathLength >= trendPathThreshold;
+        track.moveSamples >= 3 &&
+        track.trendScore >= 2 &&
+        track.pathLength >= trendPathThreshold &&
+        displacement >= 5;
 
-      const hasFastIntent = velocity >= 0.075 && track.pathLength >= 3;
+      const hasFastIntent = velocity >= 0.11 && track.pathLength >= 6 && displacement >= 4;
       const moved =
         displacement >= hardMoveThreshold ||
         track.pathLength >= pathMoveThreshold ||
@@ -299,7 +304,8 @@
           !track.multiTouch &&
           heldFor <= tapMaximumDuration &&
           endDisplacement < hardMoveThreshold &&
-          track.pathLength < trendPathThreshold;
+          track.maxDisplacement < hardMoveThreshold &&
+          track.pathLength < pathMoveThreshold;
 
         if (!tapEligible) {
           track.cancelled = true;
