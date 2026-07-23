@@ -31,9 +31,6 @@
     const rotationStep = 15;
     const tiltStep = 15;
     const maximumTilt = 45;
-    const svgNamespace = "http://www.w3.org/2000/svg";
-    let mapTransformLayer = null;
-    let layerObserver = null;
 
     // 지도 앱의 일반적인 제스처 판별 방식:
     // - 짧고 정지된 입력만 탭
@@ -57,43 +54,10 @@
       return angle;
     }
 
-    function isNonDrawableSvgNode(node) {
-      if (!(node instanceof Element)) return true;
+    function isDrawableSvgNode(node) {
+      if (!(node instanceof Element)) return false;
       const tag = node.tagName.toLowerCase();
-      return tag === "defs" || tag === "style" || tag === "title" || tag === "desc";
-    }
-
-    function ensureMapTransformLayer() {
-      if (mapTransformLayer?.isConnected && mapTransformLayer.parentNode === svg) {
-        return mapTransformLayer;
-      }
-
-      mapTransformLayer = svg.querySelector(":scope > #mapTransformLayer");
-      if (!mapTransformLayer) {
-        mapTransformLayer = document.createElementNS(svgNamespace, "g");
-        mapTransformLayer.id = "mapTransformLayer";
-        mapTransformLayer.setAttribute("data-map-transform-layer", "true");
-        svg.appendChild(mapTransformLayer);
-      }
-
-      for (const child of [...svg.children]) {
-        if (child === mapTransformLayer || isNonDrawableSvgNode(child)) continue;
-        mapTransformLayer.appendChild(child);
-      }
-      return mapTransformLayer;
-    }
-
-    function startLayerObserver() {
-      if (layerObserver) return;
-      layerObserver = new MutationObserver(() => {
-        const layer = ensureMapTransformLayer();
-        for (const child of [...svg.children]) {
-          if (child === layer || isNonDrawableSvgNode(child)) continue;
-          layer.appendChild(child);
-        }
-        applyMapTransform();
-      });
-      layerObserver.observe(svg, { childList: true });
+      return tag !== "defs" && tag !== "style" && tag !== "title" && tag !== "desc";
     }
 
     function transformSafetyScale() {
@@ -105,23 +69,28 @@
     }
 
     function applyMapTransform() {
-      const layer = ensureMapTransformLayer();
       const hasTransform = rotationDegrees !== 0 || tiltDegrees !== 0;
       const safetyScale = transformSafetyScale();
+      const transformValue = hasTransform
+        ? `perspective(1400px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg) scale(${safetyScale})`
+        : "";
 
-      // SVG 창 자체는 고정하고, 그 안의 실제 지도 요소만 회전·기울인다.
       svg.style.transform = "";
       svg.style.transformOrigin = "";
       svg.style.transformBox = "";
       svg.style.willChange = "";
 
-      layer.style.transformOrigin = "center center";
-      layer.style.transformBox = "fill-box";
-      layer.style.transformStyle = "preserve-3d";
-      layer.style.willChange = hasTransform ? "transform" : "";
-      layer.style.transform = hasTransform
-        ? `perspective(1400px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg) scale(${safetyScale})`
-        : "";
+      for (const child of [...svg.children]) {
+        if (!isDrawableSvgNode(child)) continue;
+        child.style.transformOrigin = "center center";
+        child.style.transformBox = "fill-box";
+        child.style.transformStyle = "preserve-3d";
+        child.style.willChange = hasTransform ? "transform" : "";
+        child.style.transform = transformValue;
+      }
+
+      const sampleLayer = svg.querySelector("#sampleMapLayer");
+      if (sampleLayer) sampleLayer.style.display = "none";
 
       svg.dataset.rotationDegrees = String(rotationDegrees);
       svg.dataset.tiltDegrees = String(tiltDegrees);
@@ -550,8 +519,9 @@
       }
     }
 
-    ensureMapTransformLayer();
-    startLayerObserver();
+    const transformObserver = new MutationObserver(() => applyMapTransform());
+    transformObserver.observe(svg, { childList: true });
+
     ensureRotationControls();
     resetTransform();
 
@@ -615,19 +585,17 @@
           target.removeEventListener(type, handler, settings);
         }
         api.resetInteraction();
+        transformObserver.disconnect();
         svg.style.transform = "";
-        svg.style.transformOrigin = "";
-        svg.style.transformBox = "";
         svg.style.willChange = "";
-        if (mapTransformLayer) {
-          mapTransformLayer.style.transform = "";
-          mapTransformLayer.style.transformOrigin = "";
-          mapTransformLayer.style.transformBox = "";
-          mapTransformLayer.style.transformStyle = "";
-          mapTransformLayer.style.willChange = "";
+        for (const child of [...svg.children]) {
+          if (!isDrawableSvgNode(child)) continue;
+          child.style.transform = "";
+          child.style.transformOrigin = "";
+          child.style.transformBox = "";
+          child.style.transformStyle = "";
+          child.style.willChange = "";
         }
-        layerObserver?.disconnect();
-        layerObserver = null;
         delete svg.dataset.rotationDegrees;
         delete svg.dataset.tiltDegrees;
       }

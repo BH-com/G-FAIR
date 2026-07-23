@@ -299,19 +299,14 @@ function boothLabelOverrideFor(id) {
 }
 
 async function loadSample() {
-  try {
-    const [dest, loc] = await Promise.all([
-      fetch("data/destinations.json", { cache: "no-store" }).then((r) => r.json()),
-      fetch("data/locations.json", { cache: "no-store" }).then((r) => r.json())
-    ]);
-    sampleDestinations = dest;
-    renderSample(dest, loc);
-  } catch (e) {
-    routeInfo.textContent = "관리자 화면에서 전시장 배치 엑셀을 등록해 주세요.";
-  }
+  // 사용자 화면에서는 샘플 기본 지도를 표시하지 않는다.
+  sampleDestinations = [];
+  if (sampleMapLayer) sampleMapLayer.style.display = "none";
+  routeInfo.textContent = "관리자 화면에서 전시장 배치 엑셀을 등록해 주세요.";
 }
 
 function clearMap() {
+  if (sampleMapLayer) sampleMapLayer.style.display = "none";
   centerlineDebugLayer?.remove();
   centerlineDebugLayer = null;
   document.querySelector("#gridBackground")?.remove();
