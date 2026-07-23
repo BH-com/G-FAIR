@@ -26,6 +26,8 @@
     let gestureMoved = false;
     let suppressTapUntil = 0;
     let longPressTimer = 0;
+    let rotationDegrees = 0;
+    const rotationStep = 15;
 
     // 지도 앱의 일반적인 제스처 판별 방식:
     // - 짧고 정지된 입력만 탭
@@ -40,6 +42,64 @@
     const tapMaximumDuration = 520;
     const tapSuppressDuration = 80;
     const completedTouchLifetime = 700;
+
+    function normalizeAngle(value) {
+      let angle = Number(value) || 0;
+      angle %= 360;
+      if (angle > 180) angle -= 360;
+      if (angle <= -180) angle += 360;
+      return angle;
+    }
+
+    function applyRotation(value = rotationDegrees) {
+      rotationDegrees = normalizeAngle(value);
+      svg.style.transformOrigin = "50% 50%";
+      svg.style.transformBox = "border-box";
+      svg.style.transform = rotationDegrees ? `rotate(${rotationDegrees}deg)` : "";
+      svg.dataset.rotationDegrees = String(rotationDegrees);
+      const label = document.querySelector("#mapRotationValue");
+      if (label) label.textContent = `${Math.round(rotationDegrees)}°`;
+      return rotationDegrees;
+    }
+
+    function rotateBy(delta) {
+      return applyRotation(rotationDegrees + Number(delta || 0));
+    }
+
+    function resetRotation() {
+      return applyRotation(0);
+    }
+
+    function ensureRotationControls() {
+      const actions = document.querySelector(".map-actions");
+      if (!actions || document.querySelector("#rotateLeftBtn")) return;
+
+      const left = document.createElement("button");
+      left.id = "rotateLeftBtn";
+      left.type = "button";
+      left.setAttribute("aria-label", "지도 왼쪽 회전");
+      left.title = "왼쪽으로 15° 회전";
+      left.textContent = "↶";
+
+      const value = document.createElement("button");
+      value.id = "mapRotationValue";
+      value.type = "button";
+      value.setAttribute("aria-label", "지도 회전 초기화");
+      value.title = "회전 원위치";
+      value.textContent = "0°";
+
+      const right = document.createElement("button");
+      right.id = "rotateRightBtn";
+      right.type = "button";
+      right.setAttribute("aria-label", "지도 오른쪽 회전");
+      right.title = "오른쪽으로 15° 회전";
+      right.textContent = "↷";
+
+      actions.append(left, value, right);
+      left.addEventListener("click", () => rotateBy(-rotationStep));
+      value.addEventListener("click", resetRotation);
+      right.addEventListener("click", () => rotateBy(rotationStep));
+    }
 
     function normalized(box) {
       const full = getFullViewBox();
@@ -356,12 +416,27 @@
       zoom(event.deltaY < 0 ? 0.85 : 1.18, center.x, center.y);
     }
 
+    function onKeyDown(event) {
+      if (event.target && /input|textarea|select/i.test(event.target.tagName)) return;
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        rotateBy(event.shiftKey ? -rotationStep : rotationStep);
+      } else if (event.key === "0") {
+        event.preventDefault();
+        resetRotation();
+      }
+    }
+
+    ensureRotationControls();
+    applyRotation(0);
+
     const listeners = [
       [svg, "wheel", onWheel, { passive: false }],
       [svg, "pointerdown", onPointerDown, { capture: true }],
       [svg, "pointermove", onPointerMove, { capture: true }],
       [svg, "pointerup", onPointerEnd, { capture: true }],
-      [svg, "pointercancel", onPointerEnd, { capture: true }]
+      [svg, "pointercancel", onPointerEnd, { capture: true }],
+      [window, "keydown", onKeyDown, false]
     ];
 
     for (const [target, type, handler, settings] of listeners) {
@@ -373,6 +448,12 @@
       fit,
       zoom,
       clientToSvg,
+      rotateBy,
+      resetRotation,
+      setRotation: applyRotation,
+      getRotation() {
+        return rotationDegrees;
+      },
       shouldSuppressTap() {
         return performance.now() < suppressTapUntil || pointers.size > 1;
       },
@@ -402,6 +483,8 @@
           target.removeEventListener(type, handler, settings);
         }
         api.resetInteraction();
+        svg.style.transform = "";
+        delete svg.dataset.rotationDegrees;
       }
     };
 
