@@ -101,6 +101,41 @@
         child.style.transform = transformValue;
       }
 
+      // 지도는 회전하되 번호·텍스트·특수 아이콘·위치표시는 화면 기준으로 읽기 쉽게 유지한다.
+      // Z축은 역회전하고, X축 기울기로 눌린 세로 비율만 보상한다.
+      const uprightSelectors = [
+        ".grid-label",
+        ".map-label",
+        ".location-pin-label",
+        ".booth-special-icon",
+        ".managed-location-marker"
+      ];
+      const tiltRadians = tiltDegrees * Math.PI / 180;
+      const verticalReadabilityScale = hasTransform
+        ? clamp(1 / Math.max(0.72, Math.cos(tiltRadians)), 1, 1.32)
+        : 1;
+      const uprightTransform = hasTransform
+        ? `rotateZ(${-rotationDegrees}deg) scaleY(${verticalReadabilityScale})`
+        : "";
+
+      for (const selector of uprightSelectors) {
+        for (const element of svg.querySelectorAll(selector)) {
+          element.style.transformBox = "fill-box";
+          element.style.transformOrigin = "center";
+          element.style.transform = uprightTransform;
+          element.style.willChange = hasTransform ? "transform" : "";
+        }
+      }
+
+      // 확대·회전 중 외곽선 굵기가 과도하게 변하지 않도록 SVG 벡터 선을 유지한다.
+      for (const element of svg.querySelectorAll("path, line, polyline, polygon, circle, ellipse")) {
+        element.style.vectorEffect = "non-scaling-stroke";
+        element.style.shapeRendering = "geometricPrecision";
+      }
+      for (const element of svg.querySelectorAll("text")) {
+        element.style.textRendering = "geometricPrecision";
+      }
+
       const sampleLayer = svg.querySelector("#sampleMapLayer");
       if (sampleLayer) sampleLayer.style.display = "none";
 
@@ -532,7 +567,7 @@
     }
 
     const transformObserver = new MutationObserver(() => applyMapTransform());
-    transformObserver.observe(svg, { childList: true });
+    transformObserver.observe(svg, { childList: true, subtree: true });
 
     ensureRotationControls();
     resetTransform();
@@ -607,6 +642,14 @@
           child.style.transformBox = "";
           child.style.transformStyle = "";
           child.style.willChange = "";
+        }
+        for (const element of svg.querySelectorAll(
+          ".grid-label, .map-label, .location-pin-label, .booth-special-icon, .managed-location-marker"
+        )) {
+          element.style.transform = "";
+          element.style.transformOrigin = "";
+          element.style.transformBox = "";
+          element.style.willChange = "";
         }
         delete svg.dataset.rotationDegrees;
         delete svg.dataset.tiltDegrees;
