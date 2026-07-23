@@ -22,10 +22,7 @@
     const completedTouches = new Map();
     let dragStart = null;
     let pinchStartDistance = 0;
-    let pinchStartAngle = 0;
     let pinchStartViewBox = null;
-    let rotationStartDegrees = 0;
-    let rotationDegrees = 0;
     let gestureMoved = false;
     let suppressTapUntil = 0;
     let longPressTimer = 0;
@@ -39,33 +36,10 @@
     const hardMoveThreshold = 12;
     const pathMoveThreshold = 20;
     const trendPathThreshold = 7;
-    const longPressDuration = 400;
+    const longPressDuration = 600;
     const tapMaximumDuration = 520;
     const tapSuppressDuration = 500;
     const completedTouchLifetime = 700;
-    const rotationDeadZoneDegrees = 1.2;
-
-    const pointerAngle = (a, b) => Math.atan2(
-      b.clientY - a.clientY,
-      b.clientX - a.clientX
-    ) * 180 / Math.PI;
-
-    const normalizeAngleDelta = (value) => {
-      let angle = value;
-      while (angle > 180) angle -= 360;
-      while (angle < -180) angle += 360;
-      return angle;
-    };
-
-    function applyRotation(nextDegrees = rotationDegrees) {
-      rotationDegrees = Number.isFinite(nextDegrees) ? nextDegrees : 0;
-      svg.style.transformOrigin = "50% 50%";
-      svg.style.transformBox = "fill-box";
-      svg.style.willChange = "transform";
-      svg.style.transform = `rotate(${rotationDegrees}deg)`;
-      svg.dataset.rotationDegrees = String(rotationDegrees);
-      return rotationDegrees;
-    }
 
     function normalized(box) {
       const full = getFullViewBox();
@@ -258,8 +232,6 @@
       } else if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         pinchStartDistance = distance(a, b);
-        pinchStartAngle = pointerAngle(a, b);
-        rotationStartDegrees = rotationDegrees;
         pinchStartViewBox = { ...getViewBox() };
         dragStart = null;
       }
@@ -282,11 +254,8 @@
       if (pointers.size === 1 && dragStart && (current.width < full.width || current.height < full.height)) {
         const rect = svg.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
-        const screenDx = (event.clientX - dragStart.clientX) / rect.width * dragStart.viewBox.width;
-        const screenDy = (event.clientY - dragStart.clientY) / rect.height * dragStart.viewBox.height;
-        const radians = -rotationDegrees * Math.PI / 180;
-        const dx = screenDx * Math.cos(radians) - screenDy * Math.sin(radians);
-        const dy = screenDx * Math.sin(radians) + screenDy * Math.cos(radians);
+        const dx = (event.clientX - dragStart.clientX) / rect.width * dragStart.viewBox.width;
+        const dy = (event.clientY - dragStart.clientY) / rect.height * dragStart.viewBox.height;
         apply({
           ...dragStart.viewBox,
           x: dragStart.viewBox.x - dx,
@@ -305,11 +274,6 @@
           clientY: (a.clientY + b.clientY) / 2
         };
         const center = clientToSvg(midpoint.clientX, midpoint.clientY);
-        const currentAngle = pointerAngle(a, b);
-        const angleDelta = normalizeAngleDelta(currentAngle - pinchStartAngle);
-        if (Math.abs(angleDelta) >= rotationDeadZoneDegrees) {
-          applyRotation(rotationStartDegrees + angleDelta);
-        }
         setViewBox({ ...pinchStartViewBox });
         zoom(pinchStartDistance / currentDistance, center.x, center.y);
       }
@@ -367,16 +331,11 @@
           viewBox: { ...getViewBox() }
         };
         pinchStartViewBox = null;
-        pinchStartDistance = 0;
-        pinchStartAngle = 0;
-        rotationStartDegrees = rotationDegrees;
         suppressTap();
       } else if (pointers.size === 0) {
         dragStart = null;
         pinchStartViewBox = null;
         pinchStartDistance = 0;
-        pinchStartAngle = 0;
-        rotationStartDegrees = rotationDegrees;
         gestureMoved = false;
         svg.classList.remove("dragging");
       }
@@ -406,15 +365,6 @@
       fit,
       zoom,
       clientToSvg,
-      getRotation() {
-        return rotationDegrees;
-      },
-      setRotation(degrees) {
-        return applyRotation(Number(degrees) || 0);
-      },
-      resetRotation() {
-        return applyRotation(0);
-      },
       shouldSuppressTap() {
         return performance.now() < suppressTapUntil || pointers.size > 1;
       },
@@ -435,8 +385,6 @@
         dragStart = null;
         pinchStartViewBox = null;
         pinchStartDistance = 0;
-        pinchStartAngle = 0;
-        rotationStartDegrees = rotationDegrees;
         gestureMoved = false;
         suppressTapUntil = 0;
         svg.classList.remove("dragging");
@@ -449,7 +397,6 @@
       }
     };
 
-    applyRotation(0);
     return api;
   }
 

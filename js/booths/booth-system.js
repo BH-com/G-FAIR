@@ -1475,7 +1475,14 @@ function renderGrid() {
         return;
       }
 
-      if ((!boothLabelEditMode || !isAdminScreen()) && mapViewport?.shouldSuppressTap?.()) {
+      // 마우스 클릭은 모바일 터치 억제 시간의 영향을 받지 않도록 분리한다.
+      // touch에서 파생된 합성 click만 차단하고, 실제 mouse 클릭은 즉시 허용한다.
+      const isTouchGeneratedClick = Boolean(e.sourceCapabilities?.firesTouchEvents);
+      if (
+        (!boothLabelEditMode || !isAdminScreen()) &&
+        isTouchGeneratedClick &&
+        mapViewport?.shouldSuppressTap?.()
+      ) {
         e.preventDefault();
         return;
       }
