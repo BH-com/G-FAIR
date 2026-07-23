@@ -1121,3 +1121,51 @@ body {
   .booth-crown-photo,
   .booth-photo-icon-glint { animation-duration: 4s !important; }
 }
+
+/* 길찾기 경로: 점선 + 목적지 방향으로 흐르는 강조점 */
+.route-line {
+  stroke: #111827;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, .2));
+}
+.route-flow-layer {
+  pointer-events: none;
+}
+.route-flow-dot {
+  vector-effect: non-scaling-stroke;
+  opacity: .98;
+}
+
+/* 프리미엄 GIF는 자체 회전 프레임을 사용하므로 찌그러뜨리지 않는다. */
+.booth-special-premium {
+  animation: boothPremiumGifFloat 2.4s ease-in-out infinite;
+}
+.booth-diamond-photo {
+  animation: boothDiamondGifGlow 1.55s ease-in-out infinite alternate;
+}
+/* 왕관 PNG는 폭·명암·기울기를 변화시켜 입체 회전처럼 보이게 한다. */
+.booth-special-awards {
+  animation: boothCrownPseudo3D 3.4s cubic-bezier(.45,0,.2,1) infinite;
+}
+@keyframes boothPremiumGifFloat {
+  0%,100% { transform: translateY(0) scale(1); filter: brightness(1.02) saturate(1.06); }
+  50% { transform: translateY(-3px) scale(1.06); filter: brightness(1.20) saturate(1.18); }
+}
+@keyframes boothDiamondGifGlow {
+  from { filter: brightness(.98) saturate(1.04) drop-shadow(0 1.5px 1.5px rgba(91, 33, 182, .30)); }
+  to { filter: brightness(1.28) saturate(1.18) drop-shadow(0 2.6px 3px rgba(217, 70, 239, .52)); }
+}
+@keyframes boothCrownPseudo3D {
+  0%,100% { transform: translateY(0) rotate(-2deg) scaleX(1) scaleY(1); filter: brightness(1) saturate(1.05); }
+  22% { transform: translateY(-2px) rotate(2deg) scaleX(.76) scaleY(1.04); filter: brightness(1.18) saturate(1.14); }
+  48% { transform: translateY(-3px) rotate(0deg) scaleX(.24) scaleY(1.06); filter: brightness(1.32) saturate(1.22); }
+  74% { transform: translateY(-2px) rotate(-2deg) scaleX(.76) scaleY(1.04); filter: brightness(1.15) saturate(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-flow-dot { display: none; }
+  .booth-special-premium,
+  .booth-special-awards,
+  .booth-diamond-photo { animation-duration: 6s !important; }
+}

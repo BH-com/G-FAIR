@@ -322,6 +322,7 @@ function clearMap() {
   boothsLayer.innerHTML = "";
   facilitiesLayer.innerHTML = "";
   routeLine.setAttribute("points", "");
+  document.querySelector("#routeFlowLayer")?.remove();
   startMarker.style.display = "none";
   destinationMarker.style.display = "none";
 }

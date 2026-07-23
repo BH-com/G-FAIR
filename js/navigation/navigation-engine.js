@@ -1183,6 +1183,63 @@ function fitViewToPoints(points, paddingCells = 5) {
   applyViewBox();
 }
 
+function renderAnimatedRouteFlow(routePoints) {
+  floorMap.querySelector("#routeFlowLayer")?.remove();
+  if (!Array.isArray(routePoints) || routePoints.length < 2) return;
+
+  const pathData = routePoints
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
+
+  const layer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  layer.setAttribute("id", "routeFlowLayer");
+  layer.setAttribute("class", "route-flow-layer");
+  layer.setAttribute("pointer-events", "none");
+
+  const colors = ["#ffffff", "#7dd3fc", "#3b82f6", "#6366f1"];
+  const duration = 3.2;
+  colors.forEach((color, index) => {
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("r", String(Math.max(2.8, cellPx * 0.23 + index * 0.18)));
+    dot.setAttribute("fill", color);
+    dot.setAttribute("class", "route-flow-dot");
+    dot.setAttribute("filter", "url(#routeFlowGlow)");
+
+    const motion = document.createElementNS("http://www.w3.org/2000/svg", "animateMotion");
+    motion.setAttribute("path", pathData);
+    motion.setAttribute("dur", `${duration}s`);
+    motion.setAttribute("begin", `${-(index * 0.16)}s`);
+    motion.setAttribute("repeatCount", "indefinite");
+    motion.setAttribute("calcMode", "linear");
+    dot.appendChild(motion);
+    layer.appendChild(dot);
+  });
+
+  let defs = floorMap.querySelector("defs");
+  if (!defs) {
+    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    floorMap.insertBefore(defs, floorMap.firstChild);
+  }
+  if (!defs.querySelector("#routeFlowGlow")) {
+    const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+    filter.setAttribute("id", "routeFlowGlow");
+    filter.setAttribute("x", "-120%");
+    filter.setAttribute("y", "-120%");
+    filter.setAttribute("width", "340%");
+    filter.setAttribute("height", "340%");
+    const shadow = document.createElementNS("http://www.w3.org/2000/svg", "feDropShadow");
+    shadow.setAttribute("dx", "0");
+    shadow.setAttribute("dy", "0");
+    shadow.setAttribute("stdDeviation", "1.8");
+    shadow.setAttribute("flood-color", "#60a5fa");
+    shadow.setAttribute("flood-opacity", ".95");
+    filter.appendChild(shadow);
+    defs.appendChild(filter);
+  }
+
+  routeLine.insertAdjacentElement("afterend", layer);
+}
+
 function showRoute() {
   if (!selectedDestination) return;
 
@@ -1224,8 +1281,14 @@ function showRoute() {
 
   routeLine.setAttribute(
     "stroke-width",
-    Math.max(3,cellPx*0.65)
+    Math.max(3,cellPx*0.58)
   );
+  routeLine.setAttribute(
+    "stroke-dasharray",
+    `${Math.max(1.8, cellPx * 0.20)} ${Math.max(4.8, cellPx * 0.58)}`
+  );
+  routeLine.setAttribute("stroke-dashoffset", "0");
+  renderAnimatedRouteFlow(routePoints);
 
   destinationMarker.setAttribute("cx",end.x);
   destinationMarker.setAttribute("cy",end.y);
