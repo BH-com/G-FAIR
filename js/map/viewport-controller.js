@@ -107,8 +107,7 @@
         ".grid-label",
         ".map-label",
         ".location-pin-label",
-        ".booth-special-icon",
-        ".managed-location-marker"
+        ".booth-special-upright"
       ];
       const tiltRadians = tiltDegrees * Math.PI / 180;
       const verticalReadabilityScale = hasTransform

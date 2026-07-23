@@ -1187,6 +1187,13 @@ function renderBoothSpecialEffect(group, item, geometry) {
     "pointer-events": "none",
     filter: "url(#boothIconShadow)"
   });
+  // 위치용 translate 그룹과 정면 유지용 변환을 분리한다.
+  // 바깥 그룹의 transform을 CSS로 덮어쓰면 아이콘이 SVG 원점으로 이동할 수 있다.
+  const upright = svgEl("g", {
+    class: "booth-special-upright",
+    "pointer-events": "none"
+  });
+  icon.appendChild(upright);
 
   const addGlint = (parent, x, y, scale = 1, secondary = false) => {
     const glint = svgEl("g", {
@@ -1219,7 +1226,7 @@ function renderBoothSpecialEffect(group, item, geometry) {
     }));
     addGlint(diamond, size * .30, -size * .29, .72);
     addGlint(diamond, -size * .27, -size * .12, .42, true);
-    icon.appendChild(diamond);
+    upright.appendChild(diamond);
   } else if (specialType === "awards") {
     const crown = svgEl("g", { class: "booth-photo-icon booth-special-awards" });
     crown.appendChild(svgEl("ellipse", {
@@ -1237,7 +1244,7 @@ function renderBoothSpecialEffect(group, item, geometry) {
     }));
     addGlint(crown, size * .34, -size * .31, .70);
     addGlint(crown, -size * .30, -size * .10, .40, true);
-    icon.appendChild(crown);
+    upright.appendChild(crown);
   }
   group.appendChild(icon);
 }
