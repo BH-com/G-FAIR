@@ -38,7 +38,7 @@
     const trendPathThreshold = 7;
     const longPressDuration = 600;
     const tapMaximumDuration = 520;
-    const tapSuppressDuration = 500;
+    const tapSuppressDuration = 80;
     const completedTouchLifetime = 700;
 
     function normalized(box) {
