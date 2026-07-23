@@ -1211,3 +1211,10 @@ body {
     margin-top: 0;
   }
 }
+
+/* 사용자 화면 공통: 시스템 제목은 유지하고 안내문·초기화는 PC/모바일 모두 숨김 */
+body[data-page-mode="user"] > .topbar p,
+body[data-page-mode="user"] > .topbar .header-actions,
+body[data-page-mode="user"] > .topbar #resetBtn {
+  display: none !important;
+}
