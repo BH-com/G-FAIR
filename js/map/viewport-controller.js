@@ -31,6 +31,9 @@
     const rotationStep = 15;
     const tiltStep = 15;
     const maximumTilt = 45;
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    let mapTransformLayer = null;
+    let layerObserver = null;
 
     // 지도 앱의 일반적인 제스처 판별 방식:
     // - 짧고 정지된 입력만 탭
@@ -54,14 +57,72 @@
       return angle;
     }
 
+    function isNonDrawableSvgNode(node) {
+      if (!(node instanceof Element)) return true;
+      const tag = node.tagName.toLowerCase();
+      return tag === "defs" || tag === "style" || tag === "title" || tag === "desc";
+    }
+
+    function ensureMapTransformLayer() {
+      if (mapTransformLayer?.isConnected && mapTransformLayer.parentNode === svg) {
+        return mapTransformLayer;
+      }
+
+      mapTransformLayer = svg.querySelector(":scope > #mapTransformLayer");
+      if (!mapTransformLayer) {
+        mapTransformLayer = document.createElementNS(svgNamespace, "g");
+        mapTransformLayer.id = "mapTransformLayer";
+        mapTransformLayer.setAttribute("data-map-transform-layer", "true");
+        svg.appendChild(mapTransformLayer);
+      }
+
+      for (const child of [...svg.children]) {
+        if (child === mapTransformLayer || isNonDrawableSvgNode(child)) continue;
+        mapTransformLayer.appendChild(child);
+      }
+      return mapTransformLayer;
+    }
+
+    function startLayerObserver() {
+      if (layerObserver) return;
+      layerObserver = new MutationObserver(() => {
+        const layer = ensureMapTransformLayer();
+        for (const child of [...svg.children]) {
+          if (child === layer || isNonDrawableSvgNode(child)) continue;
+          layer.appendChild(child);
+        }
+        applyMapTransform();
+      });
+      layerObserver.observe(svg, { childList: true });
+    }
+
+    function transformSafetyScale() {
+      const normalizedRotation = Math.abs(rotationDegrees % 90);
+      const acuteRotation = Math.min(normalizedRotation, 90 - normalizedRotation);
+      const rotationLoss = Math.sin((acuteRotation / 45) * Math.PI / 2) * 0.12;
+      const tiltLoss = (tiltDegrees / maximumTilt) * 0.12;
+      return clamp(1 - rotationLoss - tiltLoss, 0.76, 1);
+    }
+
     function applyMapTransform() {
+      const layer = ensureMapTransformLayer();
       const hasTransform = rotationDegrees !== 0 || tiltDegrees !== 0;
-      svg.style.transformOrigin = "50% 50%";
-      svg.style.transformBox = "border-box";
-      svg.style.willChange = hasTransform ? "transform" : "";
-      svg.style.transform = hasTransform
-        ? `perspective(1200px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg)`
+      const safetyScale = transformSafetyScale();
+
+      // SVG 창 자체는 고정하고, 그 안의 실제 지도 요소만 회전·기울인다.
+      svg.style.transform = "";
+      svg.style.transformOrigin = "";
+      svg.style.transformBox = "";
+      svg.style.willChange = "";
+
+      layer.style.transformOrigin = "center center";
+      layer.style.transformBox = "fill-box";
+      layer.style.transformStyle = "preserve-3d";
+      layer.style.willChange = hasTransform ? "transform" : "";
+      layer.style.transform = hasTransform
+        ? `perspective(1400px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg) scale(${safetyScale})`
         : "";
+
       svg.dataset.rotationDegrees = String(rotationDegrees);
       svg.dataset.tiltDegrees = String(tiltDegrees);
 
@@ -489,6 +550,8 @@
       }
     }
 
+    ensureMapTransformLayer();
+    startLayerObserver();
     ensureRotationControls();
     resetTransform();
 
@@ -553,7 +616,18 @@
         }
         api.resetInteraction();
         svg.style.transform = "";
+        svg.style.transformOrigin = "";
+        svg.style.transformBox = "";
         svg.style.willChange = "";
+        if (mapTransformLayer) {
+          mapTransformLayer.style.transform = "";
+          mapTransformLayer.style.transformOrigin = "";
+          mapTransformLayer.style.transformBox = "";
+          mapTransformLayer.style.transformStyle = "";
+          mapTransformLayer.style.willChange = "";
+        }
+        layerObserver?.disconnect();
+        layerObserver = null;
         delete svg.dataset.rotationDegrees;
         delete svg.dataset.tiltDegrees;
       }
