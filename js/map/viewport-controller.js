@@ -19,6 +19,7 @@
 
     const pointers = new Map();
     const pointerTracks = new Map();
+    const completedTouches = new Map();
     let dragStart = null;
     let pinchStartDistance = 0;
     let pinchStartViewBox = null;
@@ -34,7 +35,9 @@
     const pathMoveThreshold = 10;
     const trendPathThreshold = 3.5;
     const longPressDuration = 420;
+    const tapMaximumDuration = 360;
     const tapSuppressDuration = 500;
+    const completedTouchLifetime = 700;
 
     function normalized(box) {
       const full = getFullViewBox();
@@ -101,6 +104,20 @@
       clearLongPressTimer();
     }
 
+    function rememberCompletedTouch(pointerId, tapEligible) {
+      const now = performance.now();
+      completedTouches.set(pointerId, {
+        tapEligible: Boolean(tapEligible),
+        expiresAt: now + completedTouchLifetime
+      });
+      window.setTimeout(() => {
+        const entry = completedTouches.get(pointerId);
+        if (entry && entry.expiresAt <= performance.now()) {
+          completedTouches.delete(pointerId);
+        }
+      }, completedTouchLifetime + 40);
+    }
+
     function createTrack(event) {
       return {
         startX: event.clientX,
@@ -113,7 +130,9 @@
         moveSamples: 0,
         trendScore: 0,
         lastVectorX: 0,
-        lastVectorY: 0
+        lastVectorY: 0,
+        cancelled: false,
+        multiTouch: false
       };
     }
 
@@ -166,7 +185,10 @@
         hasDirectionalTrend ||
         hasFastIntent;
 
-      if (moved) suppressTap();
+      if (moved) {
+        track.cancelled = true;
+        suppressTap();
+      }
       return moved;
     }
 
@@ -177,13 +199,21 @@
       svg.classList.add("dragging");
 
       if (pointers.size >= 2) {
+        for (const track of pointerTracks.values()) {
+          track.cancelled = true;
+          track.multiTouch = true;
+        }
         suppressTap();
       } else {
         clearLongPressTimer();
         longPressTimer = setTimeout(() => {
           // 지도에서는 오래 누르기를 선택으로 해석하지 않는다.
           // 정지 상태라도 일정 시간을 넘기면 탭 후보를 취소한다.
-          if (pointers.size === 1) suppressTap();
+          if (pointers.size === 1) {
+            const activeTrack = pointerTracks.values().next().value;
+            if (activeTrack) activeTrack.cancelled = true;
+            suppressTap();
+          }
         }, longPressDuration);
       }
 
@@ -248,12 +278,34 @@
       if (hooks.pointerEnd?.(event, api) === true) return;
 
       const track = pointerTracks.get(event.pointerId);
+      const pointerCountBeforeEnd = pointers.size;
+      const now = performance.now();
+      let tapEligible = false;
+
       if (track) {
-        const heldFor = performance.now() - track.downTime;
-        if (heldFor >= longPressDuration) suppressTap();
-      }
-      if (gestureMoved || pointers.size >= 2) {
-        suppressTapUntil = Math.max(suppressTapUntil, performance.now() + tapSuppressDuration);
+        const heldFor = now - track.downTime;
+        const endDisplacement = Math.hypot(
+          event.clientX - track.startX,
+          event.clientY - track.startY
+        );
+
+        // 선택은 pointerdown이나 native click에서 하지 않고 오직 pointerup에서만 확정한다.
+        // 짧고 정지된 단일 터치만 탭이며, 이동 경향·장시간 누름·멀티터치는 모두 취소한다.
+        tapEligible =
+          event.type === "pointerup" &&
+          event.pointerType === "touch" &&
+          pointerCountBeforeEnd === 1 &&
+          !track.cancelled &&
+          !track.multiTouch &&
+          heldFor <= tapMaximumDuration &&
+          endDisplacement < hardMoveThreshold &&
+          track.pathLength < trendPathThreshold;
+
+        if (!tapEligible) {
+          track.cancelled = true;
+          suppressTapUntil = Math.max(suppressTapUntil, now + tapSuppressDuration);
+        }
+        rememberCompletedTouch(event.pointerId, tapEligible);
       }
 
       pointers.delete(event.pointerId);
@@ -262,6 +314,11 @@
 
       if (pointers.size === 1) {
         const remaining = [...pointers.values()][0];
+        const remainingTrack = pointerTracks.get(remaining.pointerId);
+        if (remainingTrack) {
+          remainingTrack.cancelled = true;
+          remainingTrack.multiTouch = true;
+        }
         dragStart = {
           clientX: remaining.clientX,
           clientY: remaining.clientY,
@@ -277,6 +334,7 @@
         svg.classList.remove("dragging");
       }
     }
+
 
     function onWheel(event) {
       event.preventDefault();
@@ -304,9 +362,19 @@
       shouldSuppressTap() {
         return performance.now() < suppressTapUntil || pointers.size > 1;
       },
+      consumeTouchTap(pointerId) {
+        const entry = completedTouches.get(pointerId);
+        if (!entry) return false;
+        completedTouches.delete(pointerId);
+        return entry.tapEligible && entry.expiresAt > performance.now();
+      },
+      isInteracting() {
+        return pointers.size > 0;
+      },
       resetInteraction() {
         pointers.clear();
         pointerTracks.clear();
+        completedTouches.clear();
         clearLongPressTimer();
         dragStart = null;
         pinchStartViewBox = null;

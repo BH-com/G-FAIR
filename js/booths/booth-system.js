@@ -1,4 +1,5 @@
 /* FINDER modular section: booths. Load order is defined in admin.html and index.html. */
+let ignoreSyntheticBoothClickUntil = 0;
 function updateBoothLabelSelection(id) {
   selectedBoothLabelId = id || null;
   if (gridMap) renderGridPreservingView();
@@ -1444,11 +1445,36 @@ function renderGrid() {
       }
     }
     renderBoothSpecialEffect(group, item, geometry);
+
+    // 모바일에서는 pointerdown 순간 선택하지 않는다. 지도 컨트롤러가
+    // 이동·핀치·장시간 누름을 모두 판별한 뒤 pointerup에서 탭을 승인할 때만 선택한다.
+    group.addEventListener("pointerup", (event) => {
+      if (event.pointerType !== "touch") return;
+      ignoreSyntheticBoothClickUntil = performance.now() + 800;
+      if (boothLabelEditMode && isAdminScreen()) return;
+      if (!mapViewport?.consumeTouchTap?.(event.pointerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleBoothMapClick(item);
+    });
+
+    group.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") {
+        ignoreSyntheticBoothClickUntil = performance.now() + 800;
+        mapViewport?.consumeTouchTap?.(event.pointerId);
+      }
+    });
+
     group.addEventListener("click", (e) => {
       e.stopPropagation();
 
-      // 드래그, 핀치, 장시간 누르기 뒤에 브라우저가 합성한 click은
-      // 부스 선택으로 처리하지 않는다. 짧고 거의 정지된 탭만 통과한다.
+      // 모바일 터치 뒤 브라우저가 생성하는 합성 click은 항상 무시한다.
+      // 터치 선택은 위 pointerup 승인 경로에서 이미 처리된다.
+      if ((!boothLabelEditMode || !isAdminScreen()) && performance.now() < ignoreSyntheticBoothClickUntil) {
+        e.preventDefault();
+        return;
+      }
+
       if ((!boothLabelEditMode || !isAdminScreen()) && mapViewport?.shouldSuppressTap?.()) {
         e.preventDefault();
         return;

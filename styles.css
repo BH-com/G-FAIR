@@ -1169,3 +1169,15 @@ body {
   .booth-special-awards,
   .booth-diamond-photo { animation-duration: 6s !important; }
 }
+
+/* 모바일 사용자 화면: 지도 공간 확보를 위해 상단 지도 제목/확대 버튼 바 숨김 */
+@media (max-width: 520px) {
+  body[data-page-mode="user"] .map-toolbar {
+    display: none;
+  }
+
+  body[data-page-mode="user"] .map-viewport {
+    width: 100%;
+    min-width: 0;
+  }
+}
