@@ -1181,3 +1181,33 @@ body {
     min-width: 0;
   }
 }
+
+/* 모바일 사용자 화면: 시스템 제목은 유지하고 안내문·초기화만 숨김 */
+@media (max-width: 850px) {
+  body[data-page-mode="user"] > .topbar {
+    display: flex !important;
+    align-items: center;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  body[data-page-mode="user"] > .topbar > div:first-child {
+    min-width: 0;
+  }
+
+  body[data-page-mode="user"] > .topbar h1 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  body[data-page-mode="user"] > .topbar p,
+  body[data-page-mode="user"] > .topbar .header-actions,
+  body[data-page-mode="user"] > .topbar #resetBtn {
+    display: none !important;
+  }
+
+  body[data-page-mode="user"] > .layout {
+    margin-top: 0;
+  }
+}
