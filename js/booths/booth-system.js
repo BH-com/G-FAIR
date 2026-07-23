@@ -1468,16 +1468,20 @@ function renderGrid() {
     group.addEventListener("click", (e) => {
       e.stopPropagation();
 
-      // 모바일 터치 뒤 브라우저가 생성하는 합성 click은 항상 무시한다.
-      // 터치 선택은 위 pointerup 승인 경로에서 이미 처리된다.
-      if ((!boothLabelEditMode || !isAdminScreen()) && performance.now() < ignoreSyntheticBoothClickUntil) {
+      // 모바일 pointerup에서 이미 선택한 뒤 생성되는 합성 click만 무시한다.
+      // 실제 PC 마우스 click은 터치 억제 시간과 무관하게 즉시 허용한다.
+      const isTouchGeneratedClick = Boolean(e.sourceCapabilities?.firesTouchEvents);
+      if (
+        (!boothLabelEditMode || !isAdminScreen()) &&
+        isTouchGeneratedClick &&
+        performance.now() < ignoreSyntheticBoothClickUntil
+      ) {
         e.preventDefault();
         return;
       }
 
-      // 마우스 클릭은 모바일 터치 억제 시간의 영향을 받지 않도록 분리한다.
-      // touch에서 파생된 합성 click만 차단하고, 실제 mouse 클릭은 즉시 허용한다.
-      const isTouchGeneratedClick = Boolean(e.sourceCapabilities?.firesTouchEvents);
+      // touch에서 파생된 click에만 제스처 억제를 적용한다.
+      // 마우스 클릭에는 모바일 suppressTapUntil 상태를 적용하지 않는다.
       if (
         (!boothLabelEditMode || !isAdminScreen()) &&
         isTouchGeneratedClick &&

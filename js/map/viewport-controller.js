@@ -197,13 +197,20 @@
       return moved;
     }
 
+    function capturePointer(pointerId) {
+      try { svg.setPointerCapture(pointerId); } catch {}
+    }
+
     function startPan(event) {
-      try { svg.setPointerCapture(event.pointerId); } catch {}
+      // 정지된 클릭/탭은 원래 부스 요소에서 pointerup이 발생해야 한다.
+      // pointerdown 즉시 SVG가 포인터를 가로채면 PC click 대상이 SVG로 바뀌고,
+      // 확대 직후 모바일의 첫 탭도 유실될 수 있으므로 실제 이동이 시작된 뒤 캡처한다.
       pointers.set(event.pointerId, event);
       pointerTracks.set(event.pointerId, createTrack(event));
       svg.classList.add("dragging");
 
       if (pointers.size >= 2) {
+        for (const pointerId of pointers.keys()) capturePointer(pointerId);
         for (const track of pointerTracks.values()) {
           track.cancelled = true;
           track.multiTouch = true;
@@ -246,7 +253,8 @@
       if (hooks.pointerMove?.(event, api) === true) return;
       if (!pointers.has(event.pointerId)) return;
 
-      updateMovementIntent(event);
+      const moved = updateMovementIntent(event);
+      if (moved) capturePointer(event.pointerId);
       pointers.set(event.pointerId, event);
       const current = getViewBox();
       const full = getFullViewBox();
