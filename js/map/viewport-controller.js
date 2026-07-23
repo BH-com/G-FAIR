@@ -61,18 +61,29 @@
     }
 
     function transformSafetyScale() {
-      const normalizedRotation = Math.abs(rotationDegrees % 90);
-      const acuteRotation = Math.min(normalizedRotation, 90 - normalizedRotation);
-      const rotationLoss = Math.sin((acuteRotation / 45) * Math.PI / 2) * 0.12;
-      const tiltLoss = (tiltDegrees / maximumTilt) * 0.12;
-      return clamp(1 - rotationLoss - tiltLoss, 0.76, 1);
+      const box = getViewBox();
+      const width = Math.max(1, Number(box.width) || 1);
+      const height = Math.max(1, Number(box.height) || 1);
+      const radians = Math.abs(rotationDegrees) * Math.PI / 180;
+      const cosine = Math.abs(Math.cos(radians));
+      const sine = Math.abs(Math.sin(radians));
+
+      // 회전된 직사각형의 외접 크기를 현재 뷰포트 안에 맞춘다.
+      const rotatedWidth = width * cosine + height * sine;
+      const rotatedHeight = width * sine + height * cosine;
+      const rotationFit = Math.min(width / rotatedWidth, height / rotatedHeight, 1);
+
+      // 기울기 시 원근 투영으로 가장자리 여백이 필요하므로 소폭 축소한다.
+      const tiltFit = 1 - (tiltDegrees / maximumTilt) * 0.08;
+      return clamp(rotationFit * tiltFit * 0.96, 0.58, 1);
     }
 
     function applyMapTransform() {
       const hasTransform = rotationDegrees !== 0 || tiltDegrees !== 0;
       const safetyScale = transformSafetyScale();
+      const verticalCompensation = tiltDegrees > 0 ? tiltDegrees * 0.06 : 0;
       const transformValue = hasTransform
-        ? `perspective(1400px) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg) scale(${safetyScale})`
+        ? `perspective(1400px) translateY(${verticalCompensation}%) rotateX(${tiltDegrees}deg) rotateZ(${rotationDegrees}deg) scale(${safetyScale})`
         : "";
 
       svg.style.transform = "";
@@ -82,8 +93,9 @@
 
       for (const child of [...svg.children]) {
         if (!isDrawableSvgNode(child)) continue;
-        child.style.transformOrigin = "center center";
-        child.style.transformBox = "fill-box";
+        // 모든 지도 요소가 각자 중심이 아니라 동일한 SVG 뷰포트 중심을 기준으로 움직인다.
+        child.style.transformOrigin = "50% 50%";
+        child.style.transformBox = "view-box";
         child.style.transformStyle = "preserve-3d";
         child.style.willChange = hasTransform ? "transform" : "";
         child.style.transform = transformValue;
