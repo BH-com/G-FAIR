@@ -1338,14 +1338,10 @@ function renderGrid() {
       group.appendChild(path);
 
       path.addEventListener("pointerdown", (event) => {
-        // 부스 클릭이 지도 드래그용 pointer capture에 빼앗기지 않도록
-        // pointerdown 단계에서 먼저 선택을 확정한다.
+        // 일반 사용자 화면에서는 pointerdown 즉시 부스를 선택하지 않는다.
+        // 지도 앱처럼 손을 댄 뒤 이동/핀치 여부를 먼저 판별하고,
+        // 실제 선택은 아래 group click 단계에서 짧은 탭일 때만 처리한다.
         if (!boothLabelEditMode || !isAdminScreen()) {
-          if (!centerlineEditMode && !locationEditMode && !routeDrawMode) {
-            event.preventDefault();
-            event.stopPropagation();
-            selectDestination(item);
-          }
           return;
         }
         event.preventDefault();
@@ -1450,6 +1446,14 @@ function renderGrid() {
     renderBoothSpecialEffect(group, item, geometry);
     group.addEventListener("click", (e) => {
       e.stopPropagation();
+
+      // 드래그, 핀치, 장시간 누르기 뒤에 브라우저가 합성한 click은
+      // 부스 선택으로 처리하지 않는다. 짧고 거의 정지된 탭만 통과한다.
+      if ((!boothLabelEditMode || !isAdminScreen()) && mapViewport?.shouldSuppressTap?.()) {
+        e.preventDefault();
+        return;
+      }
+
       if (boothLabelEditMode && isAdminScreen()) {
         if (boothSplitMode && selectedBoothLabelId === item.id) {
           splitBoothComponentAtPoint(
@@ -1531,7 +1535,14 @@ function renderSample(destinations, locations) {
     const rect = svgEl("rect", { x: item.x, y: item.y, width: item.width, height: item.height, rx: 8, class: item.type === "booth" ? "booth" : "facility" });
     const text = svgEl("text", { x: item.x + item.width / 2, y: item.y + item.height / 2, class: "map-label" });
     text.textContent = item.booth === "-" ? item.name : item.booth;
-    g.append(rect, text); g.addEventListener("click", () => selectDestination(item));
+    g.append(rect, text);
+    g.addEventListener("click", (event) => {
+      if (mapViewport?.shouldSuppressTap?.()) {
+        event.preventDefault();
+        return;
+      }
+      selectDestination(item);
+    });
     (item.type === "booth" ? boothsLayer : facilitiesLayer).appendChild(g);
   });
   if (startSelect) {
