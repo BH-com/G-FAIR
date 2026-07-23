@@ -39,7 +39,7 @@
     const hardMoveThreshold = 12;
     const pathMoveThreshold = 20;
     const trendPathThreshold = 7;
-    const longPressDuration = 600;
+    const longPressDuration = 400;
     const tapMaximumDuration = 520;
     const tapSuppressDuration = 500;
     const completedTouchLifetime = 700;
