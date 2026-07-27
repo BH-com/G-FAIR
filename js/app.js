@@ -232,11 +232,11 @@
    }
    function addImageEntry(key,image,kind){
      if(entries.has(key)||!image)return;
-     const frameW=96,frameH=96,pad=8;
+     const frameW=144,frameH=144,pad=10;
      const slot=reserve(frameW+pad*2,frameH+pad*2);if(!slot)return;
      const boxX=slot.x+pad,boxY=slot.y+pad,boxW=frameW,boxH=frameH;
      const ratio=(image.width||1)/(image.height||1);
-     const maxW=boxW*.74,maxH=boxH*.74;
+     const maxW=boxW*.84,maxH=boxH*.84;
      let drawW=maxW,drawH=maxW/ratio;
      if(drawH>maxH){drawH=maxH;drawW=drawH*ratio;}
      const drawX=boxX+(boxW-drawW)/2,drawY=boxY+(boxH-drawH)/2;
