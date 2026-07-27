@@ -59,7 +59,7 @@
  }
  map.addControl(new maplibregl.NavigationControl({showZoom:true,showCompass:true,visualizePitch:true}),'top-right');
  map.addControl(new ViewModeControl(),'top-right');
- let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0; const specialMarkers=[]; let boothCatalog=[];
+ let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0, routeStartChoice=null; const specialMarkers=[]; let boothCatalog=[];
  let boothWebGLLabelLayer=null; let boothTopFeatureByBooth=new Map();
  let boothThreeLayer=null, threeLoadPromise=null;
  const programUrlParams=new URLSearchParams(location.search);
@@ -687,8 +687,56 @@ function rebuildBoothCatalog(){
      if(locations.length)startSelect.value=locations[Number(previous)]?previous:'0';
    }
    const routeGo=document.getElementById('routeGo');
-   if(routeGo)routeGo.disabled=!locations.length;
+   if(routeGo)routeGo.disabled=!locations.length&&!boothCatalog.length;
    return locations;
+ }
+ function routeOriginItems(){
+   const locations=currentLocationFeatures().map((feature,index)=>({
+     type:'location',index,coord:[Number(feature.geometry.coordinates[0]),Number(feature.geometry.coordinates[1])],
+     label:String(feature.properties?.name||feature.properties?.code||('위치 '+(index+1))),
+     search:`${feature.properties?.name||''} ${feature.properties?.code||''} 지점 위치 입구 QR`.toLowerCase()
+   }));
+   const booths=boothCatalog.filter(item=>routeCoordValid(item.coord)).map(item=>({
+     type:'booth',coord:[Number(item.coord[0]),Number(item.coord[1])],booth:String(item.booth||''),name:String(item.name||''),
+     label:`${item.booth||''} · ${item.name||'기업명 없음'}`,
+     search:`${item.booth||''} ${item.name||''} ${item.category||''} 부스 기업`.toLowerCase()
+   }));
+   return [...locations,...booths];
+ }
+ function matchingRouteOrigins(query){
+   const q=String(query||'').trim().toLowerCase();if(!q)return[];
+   return routeOriginItems().filter(item=>item.search.includes(q)||item.label.toLowerCase().includes(q)).slice(0,24);
+ }
+ function clearRouteStartSearch({keepFocus=false}={}){
+   routeStartChoice=null;
+   const field=document.getElementById('routeStartSearch'),wrap=field?.closest('.route-origin-search'),list=document.getElementById('routeStartResults');
+   if(field){field.value='';field.classList.remove('has-choice');if(!keepFocus)field.blur();}
+   wrap?.classList.remove('has-value');if(list){list.classList.remove('open');list.innerHTML='';}
+ }
+ function selectRouteStartChoice(choice){
+   if(!choice||!routeCoordValid(choice.coord))return;
+   routeStartChoice={...choice,coord:[Number(choice.coord[0]),Number(choice.coord[1])]};
+   const field=document.getElementById('routeStartSearch'),wrap=field?.closest('.route-origin-search'),list=document.getElementById('routeStartResults');
+   if(field){field.value=choice.label||'';field.classList.add('has-choice');}
+   wrap?.classList.add('has-value');if(list){list.classList.remove('open');list.innerHTML='';}
+   if(choice.type==='location'&&Number.isInteger(choice.index)){
+     const select=document.getElementById('startSelect');if(select)select.value=String(choice.index);
+   }
+ }
+ function resolveRouteStart(){
+   if(routeStartChoice&&routeCoordValid(routeStartChoice.coord))return{coord:routeStartChoice.coord,label:routeStartChoice.label||'검색한 출발지'};
+   const select=document.getElementById('startSelect'),index=Number(select?.value||0),feature=currentLocationFeatures()[index],coord=locationCoord(index);
+   return coord?{coord,label:String(feature?.properties?.name||feature?.properties?.code||'현재 위치')}:null;
+ }
+ function renderRouteStartResults(){
+   const field=document.getElementById('routeStartSearch'),list=document.getElementById('routeStartResults');if(!field||!list)return;
+   if(field.classList.contains('has-choice')){list.classList.remove('open');return;}
+   const q=field.value.trim();if(!q){list.classList.remove('open');list.innerHTML='';return;}
+   const items=matchingRouteOrigins(q);
+   if(!items.length){list.innerHTML='<div class="route-start-empty">일치하는 부스·기업·지점이 없습니다.</div>';list.classList.add('open');return;}
+   list.innerHTML=items.map((item,index)=>`<button type="button" class="route-start-result" data-index="${index}" role="option"><b>${escapeHtml(item.label)}</b><small>${item.type==='booth'?'부스 출발':'등록 지점 출발'}</small></button>`).join('');
+   list.classList.add('open');
+   list.querySelectorAll('.route-start-result').forEach((button,index)=>button.addEventListener('click',()=>selectRouteStartChoice(items[index])));
  }
  function routeCoordValid(coord){return Array.isArray(coord)&&coord.length>=2&&Number.isFinite(Number(coord[0]))&&Number.isFinite(Number(coord[1]))}
  function routeGraphSnapshot(){
@@ -732,7 +780,7 @@ function rebuildBoothCatalog(){
    return {coords,distance:dist.get(END),startSnap:startSnap.coord,endSnap:endSnap.coord};
  }
  function clearRoute(){activeRoute=null;activeRouteCoords=[];if(routeAnimationFrame){cancelAnimationFrame(routeAnimationFrame);routeAnimationFrame=0;}if(map.getSource('active-route'))map.getSource('active-route').setData({type:'FeatureCollection',features:[]});if(map.getSource('route-particles'))map.getSource('route-particles').setData({type:'FeatureCollection',features:[]});if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}document.getElementById('routeInfo').textContent='시작 위치와 목적지 부스를 선택하세요.';}
- function routeTo(startCoord,dest){
+ function routeTo(startCoord,dest,startLabel='출발지'){
    const destination=dest&&routeCoordValid(dest.coord)?[Number(dest.coord[0]),Number(dest.coord[1])]:null;
    const start=routeCoordValid(startCoord)?[Number(startCoord[0]),Number(startCoord[1])]:null;
    if(!start||!destination){setStatus('길찾기 위치 좌표를 확인할 수 없습니다.');return;}
@@ -743,7 +791,7 @@ function rebuildBoothCatalog(){
    const se=document.createElement('div');se.className='route-dot start';startMarker=new maplibregl.Marker({element:se,anchor:'center'}).setLngLat(start).addTo(map);
    const ee=document.createElement('div');ee.className='route-dot end';endMarker=new maplibregl.Marker({element:ee,anchor:'center'}).setLngLat(destination).addTo(map);
    const rb=new maplibregl.LngLatBounds();coords.forEach(c=>rb.extend(c));map.fitBounds(rb,{padding:{top:140,bottom:100,left:70,right:70},pitch:48,bearing:map.getBearing(),duration:700});
-   document.getElementById('routeInfo').textContent=`${dest.booth||'목적지'}까지 경로 표시 · 경로점 ${found.coords.length}개`;setStatus('');
+   document.getElementById('routeInfo').textContent=`${startLabel} → ${dest.booth||'목적지'} · 경로점 ${found.coords.length}개`;setStatus('');
  }
  function clearRouteMarkersOnly(){if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}}
  function pointAlongRoute(coords,t){if(!coords||coords.length<2)return coords?.[0]||[0,0];const lengths=[];let total=0;for(let i=1;i<coords.length;i++){const dx=coords[i][0]-coords[i-1][0],dy=coords[i][1]-coords[i-1][1];const len=Math.hypot(dx,dy);lengths.push(len);total+=len;}if(total<=0)return coords[0];let target=((t%1)+1)%1*total;for(let i=0;i<lengths.length;i++){const len=lengths[i];if(target<=len||i===lengths.length-1){const r=len?target/len:0;return [coords[i][0]+(coords[i+1][0]-coords[i][0])*r,coords[i][1]+(coords[i+1][1]-coords[i][1])*r];}target-=len;}return coords[coords.length-1];}
@@ -887,6 +935,15 @@ function rebuildBoothCatalog(){
  function search(){const found=matching(input.value)[0];if(!found){setStatus('검색 결과가 없습니다.');results.classList.remove('open');return;}selectLabel(found);results.classList.remove('open');if(isMobileLayout())setMobileMode('map');}
  input.addEventListener('input',renderResults);input.addEventListener('focus',renderResults);input.addEventListener('keydown',e=>{if(e.key==='Enter')search();if(e.key==='Escape')results.classList.remove('open');});document.getElementById('searchBtn').onclick=search;
  document.addEventListener('pointerdown',e=>{if(!e.target.closest('.search-box'))results.classList.remove('open');});
+ const routeStartSearch=document.getElementById('routeStartSearch'),routeStartResults=document.getElementById('routeStartResults'),routeStartSearchClear=document.getElementById('routeStartSearchClear'),startSelectControl=document.getElementById('startSelect');
+ if(routeStartSearch){
+   routeStartSearch.addEventListener('input',()=>{if(routeStartSearch.classList.contains('has-choice')){routeStartChoice=null;routeStartSearch.classList.remove('has-choice');}routeStartSearch.closest('.route-origin-search')?.classList.toggle('has-value',!!routeStartSearch.value);renderRouteStartResults();});
+   routeStartSearch.addEventListener('focus',renderRouteStartResults);
+   routeStartSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();const first=matchingRouteOrigins(routeStartSearch.value)[0];if(first)selectRouteStartChoice(first);else setStatus('출발지 검색 결과가 없습니다.');}else if(event.key==='Escape'){routeStartResults?.classList.remove('open');}});
+ }
+ routeStartSearchClear?.addEventListener('click',()=>{clearRouteStartSearch({keepFocus:true});routeStartSearch?.focus({preventScroll:true});});
+ startSelectControl?.addEventListener('change',()=>clearRouteStartSearch());
+ document.addEventListener('pointerdown',event=>{if(!event.target.closest('.route-origin-search'))routeStartResults?.classList.remove('open');});
  const mobileMedia=window.matchMedia('(max-width:760px)');
  let mobileMode='map';
  function isMobileLayout(){return mobileMedia.matches;}
@@ -925,11 +982,11 @@ function rebuildBoothCatalog(){
  if(isMobileLayout())setMobileMode('map',{closeModal:false});
  document.getElementById('flatBtn').onclick=()=>map.easeTo({pitch:0,bearing:0,duration:550});document.getElementById('threeBtn').onclick=()=>map.easeTo({pitch:52,bearing:-28,duration:550});document.getElementById('resetBtn').onclick=()=>{clearSelected();fit();};
  document.getElementById('panelClose').onclick=clearSelected;const panelClearBtn=document.getElementById('panelClear');if(panelClearBtn)panelClearBtn.onclick=clearSelected;const panelFocusBtn=document.getElementById('panelFocus');if(panelFocusBtn)panelFocusBtn.onclick=()=>{if(selectedLabel?.coord)map.easeTo({center:selectedLabel.coord,zoom:18,pitch:52,bearing:map.getBearing(),duration:550});};
- document.getElementById('routeGo').onclick=()=>{const startSelect=document.getElementById('startSelect'),di=document.getElementById('destSelect').value;if(!currentLocationFeatures().length){setStatus('저장된 시작 지점이 없습니다. 관리자 지점 편집에서 지점을 추가해 주세요.');document.getElementById('routeInfo').textContent='시작 지점 데이터가 없습니다.';return;}if(di===''){setStatus('목적지 부스를 선택하세요.');return;}const si=Number(startSelect.value||0);routeTo(locationCoord(si),boothCatalog[Number(di)]);};
+ document.getElementById('routeGo').onclick=()=>{const di=document.getElementById('destSelect').value,start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');document.getElementById('routeInfo').textContent='출발지 선택이 필요합니다.';return;}if(di===''){setStatus('목적지 부스를 선택하세요.');return;}routeTo(start.coord,boothCatalog[Number(di)],start.label);};
  document.getElementById('routeClear').onclick=clearRoute;
  const routeCardClose=document.getElementById('routeCardClose');
  if(routeCardClose)routeCardClose.onclick=()=>{clearRoute();if(isMobileLayout())setMobileMode('map');};
- document.getElementById('panelRoute').onclick=()=>{if(!selectedLabel?.coord)return;if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(x=>x.booth===selectedLabel.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);const si=Number(document.getElementById('startSelect').value||0);routeTo(locationCoord(si),selectedLabel);};
+ document.getElementById('panelRoute').onclick=()=>{if(!selectedLabel?.coord)return;const start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');if(isMobileLayout())setMobileMode('route');return;}resetBoothSheet();if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(x=>x.booth===selectedLabel.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);requestAnimationFrame(()=>routeTo(start.coord,selectedLabel,start.label));};
  function refreshFromProjectStore(){
    applyBranding();
    const openProgramBooth=activeProgramPlace?.booth||'';
@@ -939,7 +996,7 @@ function rebuildBoothCatalog(){
    rebuildThreeLabels();
    const source=map.getSource('routes');if(source)source.setData(routeGeoFromGraph());
    const locationSource=map.getSource('locations');if(locationSource)locationSource.setData(locationGeoJSON());
-   const locations=rebuildLocationControls();
+   const locations=rebuildLocationControls();clearRouteStartSearch();
    const destSelect=document.getElementById('destSelect');if(destSelect)destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');
    if(openProgramBooth){const updated=programPlaceForBooth(openProgramBooth);if(updated){activeProgramPlace={...activeProgramPlace,...updated};renderProgramPlacePanel(activeProgramPlace)}else clearSelected()}
    programBadgeSignature='';refreshTimedProgramState(true);
@@ -1093,7 +1150,7 @@ function rebuildBoothCatalog(){
  if(qrLoc){const locations=currentLocationFeatures();const locIndex=locations.findIndex(f=>String(f.properties?.name||f.properties?.code||'').toLowerCase()===qrLoc.toLowerCase());const loc=locations[locIndex];if(loc){map.once('load',()=>{map.easeTo({center:[Number(loc.geometry.coordinates[0]),Number(loc.geometry.coordinates[1])],zoom:17,pitch:48,duration:800});const chip=document.getElementById('qrChip');const locName=loc.properties?.name||loc.properties?.code||qrLoc;chip.textContent=`현재 위치: ${locName}`;chip.classList.add('show');setTimeout(()=>chip.classList.remove('show'),4500);const sel=document.getElementById('startSelect');sel.value=String(locIndex);});}}
  // 프로그램은 별도 중앙 마커를 만들지 않고, 일정에 등록된 부스 클릭으로 표시합니다.
  document.getElementById('stageClose').addEventListener('click',clearSelected);
- document.getElementById('stageRoute').addEventListener('click',()=>{if(!activeProgramPlace?.item?.coord)return;if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(item=>item.booth===activeProgramPlace.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);const startIndex=Number(document.getElementById('startSelect').value||0);routeTo(locationCoord(startIndex),activeProgramPlace.item);});
+ document.getElementById('stageRoute').addEventListener('click',()=>{if(!activeProgramPlace?.item?.coord)return;const start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');if(isMobileLayout())setMobileMode('route');return;}if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(item=>item.booth===activeProgramPlace.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);routeTo(start.coord,activeProgramPlace.item,start.label);});
  setupProgramTestClock();
  if(map.loaded())refreshTimedProgramState(true);else map.once('load',()=>refreshTimedProgramState(true));
  setInterval(()=>refreshTimedProgramState(false),30000);
