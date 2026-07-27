@@ -5,6 +5,17 @@
  const getSpecialBooths=()=>window.FINDER_SPECIAL_BOOTHS||{};
  const getDisplayOptions=()=>Object.assign({},defaultDisplayOptions,window.FINDER_DISPLAY_OPTIONS||{});
  const getLabelPositions=()=>window.FINDER_LABEL_POSITIONS||{};
+ const premiumBadgeAssetUrl=new URL('../assets/images/premium-diamond.gif',FINDER_APP_SCRIPT_URL).href;
+ const premiumBadgeAsset={image:null,loaded:false,loading:false,failed:false};
+ function ensurePremiumBadgeImage(){
+   if(premiumBadgeAsset.loaded||premiumBadgeAsset.loading||premiumBadgeAsset.failed)return;
+   premiumBadgeAsset.loading=true;
+   const img=new Image();
+   img.decoding='async';
+   img.onload=()=>{premiumBadgeAsset.image=img;premiumBadgeAsset.loaded=true;premiumBadgeAsset.loading=false;requestAnimationFrame(()=>{rebuildBoothWebGLLabels();rebuildThreeLabels();map?.triggerRepaint?.();});};
+   img.onerror=()=>{premiumBadgeAsset.loading=false;premiumBadgeAsset.failed=true;};
+   img.src=premiumBadgeAssetUrl;
+ }
  const validLngLatCoord=coord=>Array.isArray(coord)&&coord.length>=2&&Number.isFinite(Number(coord[0]))&&Number.isFinite(Number(coord[1]));
  function applyBranding(){
    const project=window.FINDER_PROJECT_CURRENT||{};
@@ -139,39 +150,60 @@
    threeLoadPromise=import(url);
    return threeLoadPromise;
  }
- const MAP_LABEL_FONT_SCALE=1.5;
  function threeLabelScaleForZoom(zoom){
    const z=Number(zoom)||0;
-   // 기존 줌 구간과 증감 곡선은 유지하고, 최종 글자 크기만 1.5배 확대합니다.
-   if(z<=12.2)return 0.22*MAP_LABEL_FONT_SCALE;
+   // 전체 전시장 배치를 보는 축소 구간에서는 부스 형태가 우선입니다.
+   if(z<=12.2)return 0.22;
+   // 두 번째 참고 이미지 수준까지 라벨을 서서히 키웁니다.
    if(z<15.4){
      const t=Math.max(0,Math.min(1,(z-12.2)/(15.4-12.2)));
      const eased=t*t*(3-2*t);
-     return (0.22+(0.90-0.22)*eased)*MAP_LABEL_FONT_SCALE;
+     return 0.22+(0.90-0.22)*eased;
    }
-   return 1.04*MAP_LABEL_FONT_SCALE;
+   // 이 구간부터는 지점 저장·길찾기 수정본의 기존 크기를 그대로 사용합니다.
+   return 1.04;
  }
  function makeThreeLabelAtlas(){
    const canvas=document.createElement('canvas');canvas.width=4096;canvas.height=2048;
-   const ctx=canvas.getContext('2d',{alpha:true});ctx.clearRect(0,0,canvas.width,canvas.height);
+   const ctx=canvas.getContext('2d',{alpha:true});ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=true;
    let x=4,y=4,rowH=0;const entries=new Map();
+   function reserve(w,h){
+     if(x+w+4>canvas.width){x=4;y+=rowH+4;rowH=0;}
+     if(y+h+4>canvas.height)return null;
+     const slot={x,y,w,h};
+     x+=w+4;rowH=Math.max(rowH,h);
+     return slot;
+   }
    function addLinesEntry(key,lines,minWidth=62,paddingX=26,paddingY=12){
      if(entries.has(key)||!lines?.length)return;
      ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';
      const prepared=lines.map(line=>{ctx.font=line.font;return{...line,width:ctx.measureText(line.text).width}});
      const w=Math.max(minWidth,Math.ceil(Math.max(...prepared.map(line=>line.width)))+paddingX);
      const h=Math.max(40,prepared.reduce((sum,line)=>sum+(line.lineHeight||28),0)+paddingY);
-     if(x+w+4>canvas.width){x=4;y+=rowH+4;rowH=0;}if(y+h+4>canvas.height)return;
-     const cx=x+w/2;let cy=y+paddingY/2;
+     const slot=reserve(w,h);if(!slot)return;
+     const cx=slot.x+slot.w/2;let cy=slot.y+paddingY/2;
      prepared.forEach(line=>{
        const lineHeight=line.lineHeight||28;
        cy+=lineHeight/2;
        ctx.font=line.font;ctx.lineWidth=line.strokeWidth||8;ctx.strokeStyle='rgba(255,255,255,.98)';ctx.strokeText(line.text,cx,cy);ctx.fillStyle=line.fill;ctx.fillText(line.text,cx,cy);cy+=lineHeight/2;
      });
-     entries.set(key,{u0:x/canvas.width,v0:1-(y+h)/canvas.height,u1:(x+w)/canvas.width,v1:1-y/canvas.height,w:w/2,h:h/2});
-     x+=w+4;rowH=Math.max(rowH,h);
+     entries.set(key,{u0:slot.x/canvas.width,v0:1-(slot.y+slot.h)/canvas.height,u1:(slot.x+slot.w)/canvas.width,v1:1-slot.y/canvas.height,w:slot.w/2,h:slot.h/2});
    }
-   for(const item of boothCatalog){const lines=boothLabelLines(item);if(lines.length)addLinesEntry(`__label_${item.booth}`,lines,lines.length>1?110:62,lines.length>1?34:26,14);}
+   function addImageEntry(key,image,targetWidth=108,targetHeight=108,paddingX=8,paddingY=8){
+     const iw=Number(image?.naturalWidth||image?.width||0),ih=Number(image?.naturalHeight||image?.height||0);
+     if(entries.has(key)||!iw||!ih)return;
+     const scale=Math.min(targetWidth/iw,targetHeight/ih);
+     const drawW=Math.max(1,Math.round(iw*scale));
+     const drawH=Math.max(1,Math.round(ih*scale));
+     const w=drawW+paddingX*2,h=drawH+paddingY*2;
+     const slot=reserve(w,h);if(!slot)return;
+     const dx=slot.x+(slot.w-drawW)/2,dy=slot.y+(slot.h-drawH)/2;
+     ctx.drawImage(image,dx,dy,drawW,drawH);
+     entries.set(key,{u0:slot.x/canvas.width,v0:1-(slot.y+slot.h)/canvas.height,u1:(slot.x+slot.w)/canvas.width,v1:1-slot.y/canvas.height,w:slot.w/2,h:slot.h/2});
+   }
+   for(const item of boothCatalog){const lines=boothLabelLines(item);if(lines.length)addLinesEntry('__label_'+item.booth,lines,lines.length>1?110:62,lines.length>1?34:26,14);}
+   ensurePremiumBadgeImage();
+   if(premiumBadgeAsset.loaded&&premiumBadgeAsset.image)addImageEntry('__badge_premium_img',premiumBadgeAsset.image,108,108,8,8);
    addLinesEntry('__badge_premium',[{text:'◆',font:'700 36px Arial, sans-serif',fill:'#6d3ee8',lineHeight:40,strokeWidth:7}],54,18,12);
    addLinesEntry('__badge_awards',[{text:'♛',font:'700 38px Arial, sans-serif',fill:'#f2a000',lineHeight:42,strokeWidth:7}],58,18,12);
    addLinesEntry('__badge_event',[{text:'✦',font:'700 40px Arial, sans-serif',fill:'#ef476f',lineHeight:42,strokeWidth:7}],54,18,12);
@@ -189,9 +221,9 @@
        this.texture=new THREE.CanvasTexture(document.createElement('canvas'));
        this.material=new THREE.RawShaderMaterial({
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
-         uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1}},
-         vertexShader:`precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;varying vec2 v_uv;void main(){vec4 clip=u_matrix*vec4(position,1.0);vec2 ndc=(a_offset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;}`,
-         fragmentShader:`precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;gl_FragColor=c;}`
+         uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
+         vertexShader:`precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);vec2 ndc=((a_offset*scale)*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.6+a_effect.z))*a_effect.w:0.0;}`,
+         fragmentShader:`precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.28,v_glow));c.rgb*=1.0+v_glow*0.18;gl_FragColor=c;}`
        });
        this.geometry=new THREE.BufferGeometry();this.mesh=new THREE.Mesh(this.geometry,this.material);this.mesh.frustumCulled=false;this.mesh.renderOrder=2;this.scene.add(this.mesh);
        this.outlineMaterial=new THREE.RawShaderMaterial({
@@ -216,8 +248,9 @@
        if(this.texture)this.texture.dispose();
        this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
-       refreshBoothTopFeatureIndex();const positions=[],offsets=[],uvs=[],outlinePositions=[],verticalPositions=[];
-       const addQuad=(coord,height,entry,screenY=0)=>{const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);const hw=entry.w/2,hh=entry.h/2;const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);}};
+       refreshBoothTopFeatureIndex();const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
+       this.hasAnimatedPremium=false;
+       const addQuad=(coord,height,entry,screenY=0,effect=null)=>{const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);const hw=entry.w/2,hh=entry.h/2;const fx=effect||{scale:1,pulse:0,phase:0,glow:0};const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}};
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
@@ -225,10 +258,17 @@
          const booth=String(item.booth||''),entry=atlas.entries.get(`__label_${booth}`),feature=boothTopFeatureByBooth.get(booth);if(!feature||!item.coord)continue;
          const top=boothFeatureHeight(feature);if(entry)addQuad(item.coord,top+2.4,entry,0);
          const kind=displayOptions.showSpecialBooths!==false?runtimeSpecialBooths[booth]:'';
-         const badge=kind?atlas.entries.get(`__badge_${kind}`):null;if(badge)addQuad(item.coord,top+3.5,badge,entry?24:0);
+         const isPremium=kind==='premium';
+         const badge=isPremium?(atlas.entries.get('__badge_premium_img')||atlas.entries.get('__badge_premium')):(kind?atlas.entries.get(`__badge_${kind}`):null);
+         const badgeEffect=isPremium?{scale:1,pulse:0.08,phase:0.35,glow:0.24}:null;
+         if(isPremium&&badge)this.hasAnimatedPremium=true;
+         const badgeOffset=badge?(isPremium?(entry?38:10):(entry?24:0)):0;
+         const badgeHeight=isPremium?top+3.9:top+3.5;
+         if(badge)addQuad(item.coord,badgeHeight,badge,badgeOffset,badgeEffect);
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         if(programBadge)addQuad(item.coord,top+4.5,programBadge,badge?(entry?62:38):(entry?28:0));
+         const programOffset=badge?(isPremium?(entry?86:62):(entry?62:38)):(entry?28:0);
+         if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
        }
        for(const feature of data.booths?.features||[]){
          const top=boothFeatureHeight(feature)+0.55,geometry=feature.geometry;if(!geometry)continue;
@@ -238,6 +278,7 @@
        this.geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
        this.geometry.setAttribute('a_offset',new THREE.Float32BufferAttribute(offsets,2));
        this.geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+       this.geometry.setAttribute('a_effect',new THREE.Float32BufferAttribute(effects,4));
        this.geometry.setDrawRange(0,positions.length/3);this.geometry.computeBoundingSphere();
        this.outlineGeometry.setAttribute('position',new THREE.Float32BufferAttribute(outlinePositions,3));this.outlineGeometry.setDrawRange(0,outlinePositions.length/3);this.outlineGeometry.computeBoundingSphere();
        this.verticalGeometry.setAttribute('position',new THREE.Float32BufferAttribute(verticalPositions,3));this.verticalGeometry.setDrawRange(0,verticalPositions.length/3);this.verticalGeometry.computeBoundingSphere();
@@ -248,7 +289,9 @@
        this.material.uniforms.u_matrix.value.fromArray(matrix);this.outlineMaterial.uniforms.u_matrix.value.fromArray(matrix);this.verticalMaterial.uniforms.u_matrix.value.fromArray(matrix);
        const canvas=this.map.getCanvas();this.material.uniforms.u_viewport.value.set(canvas.width,canvas.height);
        this.material.uniforms.u_pixelScale.value=(window.devicePixelRatio||1)*threeLabelScaleForZoom(this.map.getZoom());
+       this.material.uniforms.u_time.value=performance.now()*0.001;
        this.renderer.resetState();this.renderer.render(this.scene,this.camera);
+       if(this.hasAnimatedPremium)this.map?.triggerRepaint();
        if(!this.firstRendered){this.firstRendered=true;if(this.map.getLayer('booth-labels'))this.map.setLayoutProperty('booth-labels','visibility','none');setStatus('');}
      },
      onRemove(){
@@ -463,7 +506,7 @@ function rebuildBoothCatalog(){
  function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();}
  function findFeatureId(booth){const index=(data.booths?.features||[]).findIndex(feature=>String(feature.properties?.booth||'')===String(booth||''));if(index<0)return null;const feature=data.booths.features[index];return feature.id??feature.properties?._editId??index;}
  function selectLabel(item,fly=true){const id=findFeatureId(item.booth);openSelection(item,id,item.coord);if(fly)map.easeTo({center:item.coord,zoom:15.55,pitch:48,bearing:map.getBearing(),duration:650});}
- function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?18:15);}
+ function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
  map.on('load',()=>{
    rebuildBoothCatalog();
    map.addSource('booths',{type:'geojson',data:boothDisplayGeoJSON()});
@@ -483,7 +526,7 @@ function rebuildBoothCatalog(){
      'line-opacity':.9
    }});
    map.addSource('booth-label-points',{type:'geojson',data:boothLabelGeoJSON()});
-   map.addLayer({id:'booth-labels',type:'symbol',source:'booth-label-points',layout:{'text-field':['coalesce',['get','text'],''],'text-size':15,'text-font':['Open Sans Bold'],'text-anchor':'center','text-allow-overlap':false,'text-ignore-placement':false,'symbol-sort-key':0},paint:{'text-color':'#15243b','text-halo-color':'#ffffff','text-halo-width':1.25}});
+   map.addLayer({id:'booth-labels',type:'symbol',source:'booth-label-points',layout:{'text-field':['coalesce',['get','text'],''],'text-size':10,'text-font':['Open Sans Bold'],'text-anchor':'center','text-allow-overlap':false,'text-ignore-placement':false,'symbol-sort-key':0},paint:{'text-color':'#15243b','text-halo-color':'#ffffff','text-halo-width':1.25}});
    updateBoothLabelLayer();
    initThreeLabels();
    map.addSource('routes',{type:'geojson',data:routeGeoFromGraph()});
