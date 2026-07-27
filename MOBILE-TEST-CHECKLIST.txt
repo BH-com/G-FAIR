@@ -1,0 +1,39 @@
+FINDER MapLibre mobile test checklist
+
+1. One-finger drag
+- The map moves immediately.
+- A booth is not accidentally selected while dragging.
+
+2. Short tap
+- A booth is selected with one short tap.
+- The selection panel opens without needing a second tap.
+
+3. Pinch zoom
+- Zoom in and out smoothly with two fingers.
+- No booth is selected during pinch.
+- The first booth tap immediately after pinch works.
+
+4. Two-finger rotation
+- Twist two fingers to rotate the map.
+- Booth labels remain readable.
+
+5. Two-finger pitch
+- Move two fingers together vertically to change pitch.
+- The map does not jump or disappear.
+
+6. Route display
+- Select a start point and destination.
+- Route line and moving dots remain smooth while zooming/rotating.
+- Clear route stops the animation immediately.
+
+7. Special booths
+- Diamond, crown, and event marker stay attached to their booths.
+- Icons do not block booth selection.
+
+8. Screen changes
+- Rotate the phone between portrait and landscape.
+- Full view, flat/3D, search, and selection still work.
+
+9. Performance
+- Try rapid zoom/rotate for 20-30 seconds.
+- Check for lag, overheating, or browser reloads.
