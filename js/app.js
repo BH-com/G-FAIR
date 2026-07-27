@@ -59,7 +59,7 @@
  }
  map.addControl(new maplibregl.NavigationControl({showZoom:true,showCompass:true,visualizePitch:true}),'top-right');
  map.addControl(new ViewModeControl(),'top-right');
- let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0, routeStartChoice=null; const specialMarkers=[]; let boothCatalog=[];
+ let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0, routeStartChoice=null, pendingRouteAfterOrigin=false; const specialMarkers=[]; let boothCatalog=[];
  let boothWebGLLabelLayer=null; let boothTopFeatureByBooth=new Map();
  let boothThreeLayer=null, threeLoadPromise=null;
  const programUrlParams=new URLSearchParams(location.search);
@@ -743,6 +743,7 @@ function rebuildBoothCatalog(){
    if(field){field.value=choice.label||'';field.classList.add('has-choice');field.setAttribute('aria-expanded','false');}
    wrap?.classList.add('has-value');if(list)list.innerHTML='';setRouteOriginDropdownOpen(false);
    if(select)select.value=choice.type==='location'&&Number.isInteger(choice.index)?String(choice.index):'';
+   maybeRunPendingRoute();
  }
  function syncRouteStartComboboxFromSelect(){
    const select=document.getElementById('startSelect');if(!select||select.value==='')return;
@@ -804,7 +805,7 @@ function rebuildBoothCatalog(){
    const coords=ids.map(id=>coordsById.get(id)).filter(routeCoordValid).filter((coord,index,array)=>index===0||Math.hypot(coord[0]-array[index-1][0],coord[1]-array[index-1][1])>1e-12);
    return {coords,distance:dist.get(END),startSnap:startSnap.coord,endSnap:endSnap.coord};
  }
- function clearRoute(){activeRoute=null;activeRouteCoords=[];if(routeAnimationFrame){cancelAnimationFrame(routeAnimationFrame);routeAnimationFrame=0;}if(map.getSource('active-route'))map.getSource('active-route').setData({type:'FeatureCollection',features:[]});if(map.getSource('route-particles'))map.getSource('route-particles').setData({type:'FeatureCollection',features:[]});if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}document.getElementById('routeInfo').textContent='시작 위치와 목적지 부스를 선택하세요.';}
+ function clearRoute(){pendingRouteAfterOrigin=false;activeRoute=null;activeRouteCoords=[];if(routeAnimationFrame){cancelAnimationFrame(routeAnimationFrame);routeAnimationFrame=0;}if(map.getSource('active-route'))map.getSource('active-route').setData({type:'FeatureCollection',features:[]});if(map.getSource('route-particles'))map.getSource('route-particles').setData({type:'FeatureCollection',features:[]});if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}document.getElementById('routeInfo').textContent='시작 위치와 목적지 부스를 선택하세요.';}
  function routeTo(startCoord,dest,startLabel='출발지'){
    const destination=dest&&routeCoordValid(dest.coord)?[Number(dest.coord[0]),Number(dest.coord[1])]:null;
    const start=routeCoordValid(startCoord)?[Number(startCoord[0]),Number(startCoord[1])]:null;
@@ -815,7 +816,7 @@ function rebuildBoothCatalog(){
    activeRouteCoords=coords;activeRoute={type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:coords}}]};activeSource.setData(activeRoute);startRouteAnimation();clearRouteMarkersOnly();
    const se=document.createElement('div');se.className='route-dot start';startMarker=new maplibregl.Marker({element:se,anchor:'center'}).setLngLat(start).addTo(map);
    const ee=document.createElement('div');ee.className='route-dot end';endMarker=new maplibregl.Marker({element:ee,anchor:'center'}).setLngLat(destination).addTo(map);
-   const rb=new maplibregl.LngLatBounds();coords.forEach(c=>rb.extend(c));map.fitBounds(rb,{padding:{top:140,bottom:100,left:70,right:70},pitch:48,bearing:map.getBearing(),duration:700});
+   const rb=new maplibregl.LngLatBounds();coords.forEach(c=>rb.extend(c));const sheetVisible=isMobileLayout()&&panel?.classList.contains('open');const sheetHeight=sheetVisible?panel.getBoundingClientRect().height:0;const routeTopPadding=isMobileLayout()&&mobileMode==='route'?178:140;const routeBottomPadding=sheetVisible?Math.min(330,Math.max(150,Math.round(sheetHeight+82))):100;map.fitBounds(rb,{padding:{top:routeTopPadding,bottom:routeBottomPadding,left:54,right:54},pitch:48,bearing:map.getBearing(),duration:700});
    document.getElementById('routeInfo').textContent=`${startLabel} → ${dest.booth||'목적지'} · 경로점 ${found.coords.length}개`;setStatus('');
  }
  function clearRouteMarkersOnly(){if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}}
@@ -829,39 +830,53 @@ function rebuildBoothCatalog(){
    panel.classList.toggle('sheet-expanded',next);
    panel.style.removeProperty('--sheet-drag-y');
    panel.classList.remove('sheet-dragging');
+   document.body.classList.toggle('booth-sheet-expanded',next&&panel.classList.contains('open'));
    const grabber=document.getElementById('panelGrabber');
    if(grabber){
      grabber.setAttribute('aria-expanded',next?'true':'false');
-     grabber.setAttribute('aria-label',next?'부스 설명 패널 닫기 또는 축소하기':'부스 설명 패널 펼치기 또는 닫기');
+     grabber.setAttribute('aria-label',next?'부스 설명 패널을 기본 높이로 내리기':'부스 설명 패널 펼치기');
    }
    if(scrollTop){const detail=panel.querySelector('.detail-grid');if(detail)detail.scrollTop=0;}
+   if(typeof updateBottomNavState==='function')updateBottomNavState();
  }
  function resetBoothSheet(){setBoothSheetExpanded(false,{scrollTop:true});}
+ function mobileBoothSheetMetrics(){
+   const viewport=Math.max(320,Number(window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight||0));
+   const collapsed=Math.max(215,Math.min(viewport*.30,255));
+   const expanded=Math.max(collapsed,viewport-118);
+   return{viewport,collapsed,expanded,collapseTravel:Math.max(90,expanded-collapsed)};
+ }
  function setupBoothSheetGesture(){
    const grabber=document.getElementById('panelGrabber');if(!grabber||!panel)return;
-   let tracking=false,startY=0,lastY=0,startTime=0,lastTime=0,startExpanded=false,pointerId=null,didDrag=false,suppressClick=false;
+   let tracking=false,startY=0,lastY=0,startTime=0,startExpanded=false,pointerId=null,didDrag=false,suppressClick=false;
    const finish=(event,cancelled=false)=>{
      if(!tracking)return;
-     const y=Number(event?.clientY??lastY),delta=y-startY,elapsed=Math.max(1,Number(event?.timeStamp||performance.now())-startTime),velocity=delta/elapsed;
+     const y=Number(event?.clientY??lastY),delta=y-startY,elapsed=Math.max(1,Number(event?.timeStamp||performance.now())-startTime),velocity=delta/elapsed,metrics=mobileBoothSheetMetrics();
      tracking=false;suppressClick=didDrag;panel.classList.remove('sheet-dragging');panel.style.removeProperty('--sheet-drag-y');
      if(pointerId!=null&&grabber.hasPointerCapture?.(pointerId)){try{grabber.releasePointerCapture(pointerId)}catch(_){}}
      pointerId=null;
      if(cancelled){setBoothSheetExpanded(startExpanded);return;}
-     if(delta>82||velocity>.58){clearSelected();return;}
+     if(startExpanded){
+       // 확장 상태에서는 먼저 기본 높이로 복귀하고, 기본 위치보다 훨씬 아래까지 내린 경우에만 닫습니다.
+       const dismissDistance=metrics.collapseTravel+96;
+       if(delta>dismissDistance||(delta>metrics.collapseTravel*.72&&velocity>.92)){clearSelected();return;}
+       if(delta>46||velocity>.40){setBoothSheetExpanded(false);return;}
+       setBoothSheetExpanded(true);return;
+     }
+     // 기본 높이에서는 살짝 내리면 원위치, 충분히 내렸을 때만 닫습니다.
+     if(delta>112||(delta>54&&velocity>.68)){clearSelected();return;}
      if(delta<-48||velocity<-.42){setBoothSheetExpanded(true);return;}
-     setBoothSheetExpanded(startExpanded);
+     setBoothSheetExpanded(false);
    };
    grabber.addEventListener('pointerdown',event=>{
      if(!isMobileLayout()||!panel.classList.contains('open'))return;
      if(event.pointerType==='mouse'&&event.button!==0)return;
-     tracking=true;didDrag=false;suppressClick=false;pointerId=event.pointerId;startY=lastY=event.clientY;startTime=lastTime=event.timeStamp||performance.now();startExpanded=panel.classList.contains('sheet-expanded');
+     tracking=true;didDrag=false;suppressClick=false;pointerId=event.pointerId;startY=lastY=event.clientY;startTime=event.timeStamp||performance.now();startExpanded=panel.classList.contains('sheet-expanded');
      panel.classList.add('sheet-dragging');grabber.setPointerCapture?.(pointerId);event.preventDefault();
    });
    grabber.addEventListener('pointermove',event=>{
      if(!tracking||event.pointerId!==pointerId)return;
-     lastY=event.clientY;lastTime=event.timeStamp||performance.now();
-     const delta=lastY-startY;if(Math.abs(delta)>5)didDrag=true;
-     // Upward drag previews expansion; downward drag follows the finger toward dismissal.
+     lastY=event.clientY;const delta=lastY-startY;if(Math.abs(delta)>5)didDrag=true;
      const translated=delta>0?delta:Math.max(-72,delta*.34);
      panel.style.setProperty('--sheet-drag-y',`${translated}px`);event.preventDefault();
    });
@@ -869,7 +884,7 @@ function rebuildBoothCatalog(){
    grabber.addEventListener('pointercancel',event=>finish(event,true));
    grabber.addEventListener('keydown',event=>{
      if(event.key==='ArrowUp'||event.key==='Enter'||event.key===' '){event.preventDefault();setBoothSheetExpanded(true);}
-     else if(event.key==='ArrowDown'){event.preventDefault();clearSelected();}
+     else if(event.key==='ArrowDown'){event.preventDefault();if(panel.classList.contains('sheet-expanded'))setBoothSheetExpanded(false);else clearSelected();}
    });
    grabber.addEventListener('click',event=>{
      if(!isMobileLayout()||!panel.classList.contains('open'))return;
@@ -916,8 +931,8 @@ function rebuildBoothCatalog(){
    if(height>0)document.documentElement.style.setProperty('--app-vh',`${height}px`);
  }
  function refreshSelectedBoothColor(){const source=map.getSource('booths');if(source)source.setData(boothDisplayGeoJSON());}
- function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');refreshSelectedBoothColor();rebuildThreeLabels();updateBottomNavState();}
- function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');resetBoothSheet();panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();updateBottomNavState();}
+ function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;pendingRouteAfterOrigin=false;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');document.body.classList.remove('booth-panel-open','booth-sheet-expanded');refreshSelectedBoothColor();rebuildThreeLabels();updateBottomNavState();}
+ function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');resetBoothSheet();panel.classList.add('open');document.body.classList.add('booth-panel-open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();updateBottomNavState();}
  function findFeatureId(booth){const index=(data.booths?.features||[]).findIndex(feature=>String(feature.properties?.booth||'')===String(booth||''));if(index<0)return null;const feature=data.booths.features[index];return feature.id??feature.properties?._editId??index;}
  function selectLabel(item,fly=true){const id=findFeatureId(item.booth);openSelection(item,id,item.coord);if(fly)map.easeTo({center:item.coord,zoom:15.55,pitch:48,bearing:map.getBearing(),duration:650});}
  function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
@@ -1022,9 +1037,10 @@ function rebuildBoothCatalog(){
    const target=selectedBoothRouteTarget(),routeButton=document.querySelector('.bottom-nav [data-mobile-action="route"]'),routeLabel=document.getElementById('mobileRouteNavLabel');
    if(routeLabel)routeLabel.textContent=target?'여기로 길찾기':'길찾기';
    if(routeButton)routeButton.setAttribute('aria-label',target?`${target.booth} 여기로 길찾기`:'길찾기 열기');
+   const sheetExpanded=panel?.classList.contains('sheet-expanded');
    document.querySelectorAll('.bottom-nav [data-mobile-action]').forEach(button=>{
      const action=button.dataset.mobileAction;
-     const active=(action==='search'&&mobileMode==='search')||(action==='expo'&&mobileMode==='expo')||(action==='route'&&!!target&&(mobileMode==='map'||mobileMode==='route'));
+     const active=(action==='search'&&mobileMode==='search')||(action==='expo'&&mobileMode==='expo')||(action==='route'&&!!target&&!sheetExpanded&&(mobileMode==='map'||mobileMode==='route'));
      button.classList.toggle('active',active);
      button.setAttribute('aria-pressed',active?'true':'false');
    });
@@ -1046,14 +1062,36 @@ function rebuildBoothCatalog(){
    if(mobileMode==='search'&&focusSearch)setTimeout(()=>input.focus({preventScroll:true}),60);
    requestAnimationFrame(()=>map.resize());
  }
+ function runRouteFromControls({showMessages=true}={}){
+   const di=document.getElementById('destSelect').value,start=resolveRouteStart();
+   if(!start){
+     if(showMessages){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');document.getElementById('routeInfo').textContent='출발지 선택이 필요합니다.';}
+     return false;
+   }
+   if(di===''){if(showMessages)setStatus('목적지 부스를 선택하세요.');return false;}
+   const destination=boothCatalog[Number(di)];if(!destination)return false;
+   pendingRouteAfterOrigin=false;routeTo(start.coord,destination,start.label);return true;
+ }
+ function maybeRunPendingRoute(){
+   if(!pendingRouteAfterOrigin)return false;
+   return runRouteFromControls({showMessages:false});
+ }
  function openRouteFromBottomNav(){
    const target=selectedBoothRouteTarget();
    if(target){
      const idx=boothCatalog.findIndex(item=>item.booth===target.booth);
      if(idx>=0)document.getElementById('destSelect').value=String(idx);
-     resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');
+     resetBoothSheet();panel.classList.add('open');document.body.classList.add('booth-panel-open');document.getElementById('stagePanel')?.classList.remove('open');
    }
    setMobileMode('route');
+   if(target){
+     const start=resolveRouteStart();
+     if(start){pendingRouteAfterOrigin=false;requestAnimationFrame(()=>runRouteFromControls());}
+     else{
+       pendingRouteAfterOrigin=true;
+       setTimeout(()=>{routeStartSearch?.focus({preventScroll:true});renderRouteStartResults();},70);
+     }
+   }
  }
  document.querySelectorAll('.bottom-nav [data-mobile-action]').forEach(button=>button.addEventListener('click',()=>{
    const mode=button.dataset.mobileAction;
@@ -1073,7 +1111,7 @@ function rebuildBoothCatalog(){
  if(isMobileLayout())setMobileMode('map',{closeModal:false});
  document.getElementById('flatBtn').onclick=()=>map.easeTo({pitch:0,bearing:0,duration:550});document.getElementById('threeBtn').onclick=()=>map.easeTo({pitch:52,bearing:-28,duration:550});document.getElementById('resetBtn').onclick=()=>{clearSelected();fit();};
  document.getElementById('panelClose').onclick=clearSelected;const panelClearBtn=document.getElementById('panelClear');if(panelClearBtn)panelClearBtn.onclick=clearSelected;const panelFocusBtn=document.getElementById('panelFocus');if(panelFocusBtn)panelFocusBtn.onclick=()=>{if(selectedLabel?.coord)map.easeTo({center:selectedLabel.coord,zoom:18,pitch:52,bearing:map.getBearing(),duration:550});};
- document.getElementById('routeGo').onclick=()=>{const di=document.getElementById('destSelect').value,start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');document.getElementById('routeInfo').textContent='출발지 선택이 필요합니다.';return;}if(di===''){setStatus('목적지 부스를 선택하세요.');return;}routeTo(start.coord,boothCatalog[Number(di)],start.label);};
+ document.getElementById('routeGo').onclick=()=>{pendingRouteAfterOrigin=false;runRouteFromControls();};
  document.getElementById('routeClear').onclick=clearRoute;
  const routeCardClose=document.getElementById('routeCardClose');
  if(routeCardClose)routeCardClose.onclick=()=>{clearRoute();if(isMobileLayout())setMobileMode('map');};
@@ -1193,7 +1231,7 @@ function rebuildBoothCatalog(){
  function openProgramPlace(place,item,id,coord){
    clearSelected();selectedId=id;selectedBoothKey=String(item.booth||place.booth||'');selectedLabel=coord?{...item,coord}:item;activeProgramPlace={...place,coord:selectedLabel?.coord,item:selectedLabel};
    refreshSelectedBoothColor();
-   panel.classList.remove('open');renderProgramPlacePanel(activeProgramPlace);document.getElementById('stagePanel').classList.add('open');
+   panel.classList.remove('open');document.body.classList.remove('booth-panel-open','booth-sheet-expanded');renderProgramPlacePanel(activeProgramPlace);document.getElementById('stagePanel').classList.add('open');
    setStatus(`프로그램 장소: ${place.booth} ${place.name}`);rebuildThreeLabels();updateBottomNavState();
  }
  function updateBoothDetail(item){

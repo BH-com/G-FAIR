@@ -544,3 +544,36 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
   .modal-backdrop.modal-dragging .modal-grabber::after{background:#5f7896}
 }
 @media(min-width:761px){.modal-grabber{display:none}}
+
+/* 2026-07-27: direct route sequence, two-step booth sheet, and bottom navigation backdrop. */
+@media(max-width:760px){
+  .wrap::after{
+    content:"";
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    height:72px;
+    z-index:11;
+    pointer-events:none;
+    opacity:0;
+    background:rgba(218,225,235,.82);
+    -webkit-backdrop-filter:blur(4px) saturate(.92);
+    backdrop-filter:blur(4px) saturate(.92);
+    transition:opacity .2s ease;
+  }
+  body.booth-panel-open .wrap::after{opacity:1}
+  body.booth-panel-open .bottom-nav{
+    background:rgba(255,255,255,.94);
+    box-shadow:0 7px 24px rgba(30,47,70,.22),0 0 0 1px rgba(255,255,255,.65) inset;
+  }
+  body.booth-sheet-expanded[data-mobile-mode="route"] .route-card{display:none!important}
+  .bottom-nav .route-nav-icon svg{
+    width:22px;
+    height:22px;
+    stroke-width:1.8;
+  }
+  .bottom-nav button[data-mobile-action="route"] .route-nav-icon{
+    transform:translateY(-1px);
+  }
+}
