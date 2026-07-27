@@ -140,9 +140,9 @@
    return threeLoadPromise;
  }
  const SPECIAL_BADGE_ASSET_URLS={
-   premium:'../assets/images/premium-booth-badge.png?v=20260727-badge-front2',
-   awards:'../assets/images/awards-booth-badge.png?v=20260727-badge-front2',
-   event:'../assets/images/event-booth-badge.png?v=20260727-badge-front2'
+   premium:'../assets/images/premium-booth-badge-clean.png?v=20260727-clean-circle1',
+   awards:'../assets/images/awards-booth-badge-clean.png?v=20260727-clean-circle1',
+   event:'../assets/images/event-booth-badge-clean.png?v=20260727-clean-circle1'
  };
  let specialBadgeAssetsPromise=null,specialBadgeAssets=null;
  function loadBadgeImage(src){
@@ -314,7 +314,6 @@
        :(kind==='event'
          ?{ring:'#ff8f1f',fill:'#fffaf2',sparkle:'rgba(255,207,97,.98)',glow:'rgba(255,166,74,.34)'}
          :{ring:'#6e51ff',fill:'#fbf9ff',sparkle:'rgba(163,229,255,.98)',glow:'rgba(122,103,255,.34)'});
-     drawSparkles(boxX+6,boxY+6,boxW-12,boxH-12,theme.sparkle,kind==='awards'?'awards':(kind==='event'?'event':'default'));
      ctx.save();
      ctx.shadowColor=theme.glow;
      ctx.shadowBlur=22;
@@ -374,7 +373,6 @@
      const ring=kind==='premium'?'#6e51ff':(kind==='awards'?'#f1ac1a':'#ff8f1f');
      const glow=kind==='premium'?'rgba(116,91,255,.40)':(kind==='awards'?'rgba(255,187,55,.38)':'rgba(255,143,31,.36)');
      const sparkle=kind==='premium'?'rgba(166,230,255,.98)':(kind==='awards'?'rgba(255,219,108,.98)':'rgba(255,218,110,.98)');
-     drawStar(slotX+34,slotY+42,9,sparkle);drawStar(slotX+184,slotY+38,7,sparkle);drawStar(slotX+176,slotY+178,8,sparkle);
      ctx.save();ctx.shadowColor=glow;ctx.shadowBlur=22;ctx.fillStyle='rgba(255,255,255,.99)';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.restore();
      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx,cy,r-5,0,Math.PI*2);ctx.fill();ctx.lineWidth=8;ctx.strokeStyle=ring;ctx.stroke();
      const image=images[kind];
@@ -997,8 +995,22 @@ function rebuildBoothCatalog(){
    const badge=document.getElementById('panelBadge');
    if(desc)desc.textContent=detail.description||item.description||'제품 설명이 등록되지 않았습니다.';
    if(link){if(detail.website){link.href=detail.website;link.style.display='inline-block'}else link.style.display='none'}
-   const type=getSpecialBooths()[item.booth];
-   if(badge){badge.className='special-badge';badge.textContent='';if(type){badge.classList.add('show',type);badge.textContent=type==='premium'?'◇ PREMIUM':type==='awards'?'♛ AWARDS':'✦ SPECIAL';}}
+   const type=String(getSpecialBooths()[item.booth]||'').toLowerCase();
+   const specialMeta={
+     premium:{subtitle:'프리미엄 부스',icon:'assets/images/premium-booth-badge-clean.png'},
+     awards:{subtitle:'어워즈 부스',icon:'assets/images/awards-booth-badge-clean.png'},
+     event:{subtitle:'이벤트 부스',icon:'assets/images/event-booth-badge-clean.png'}
+   }[type];
+   if(badge){
+     badge.className='special-badge';
+     badge.textContent='';
+     badge.removeAttribute('aria-label');
+     if(specialMeta){
+       badge.classList.add('show',type);
+       badge.setAttribute('aria-label',`SPECIAL ${specialMeta.subtitle}`);
+       badge.innerHTML=`<span class="special-badge-icon" aria-hidden="true"><img src="${specialMeta.icon}?v=20260727-clean-circle1" alt=""></span><span class="special-badge-copy"><strong class="special-badge-title">SPECIAL</strong><small class="special-badge-subtitle">${specialMeta.subtitle}</small></span>`;
+     }
+   }
  }
  function openExhibition(){if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('expo',{closeModal:false});document.getElementById('expoModal').classList.add('open');renderPrograms();renderDocuments();}
  function closeExhibition(){document.getElementById('expoModal').classList.remove('open');if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('map',{closeModal:false});}
