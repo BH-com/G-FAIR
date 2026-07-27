@@ -518,6 +518,7 @@ function rebuildBoothCatalog(){
    style.id='finder-special-marker-styles';
    style.textContent=`
      .finder-special-marker{width:68px;height:68px;pointer-events:none;perspective:520px;overflow:visible;z-index:8}
+     .finder-special-marker .badge-scale{width:68px;height:68px;display:flex;align-items:center;justify-content:center;transform:scale(var(--finder-badge-scale,1));transform-origin:50% 50%;will-change:transform}
      .finder-special-marker .badge-motion{width:68px;height:68px;display:flex;align-items:center;justify-content:center;transform-origin:50% 50%;will-change:transform;transform-style:preserve-3d}
      .finder-special-marker .badge-circle{--ring:#6e51ff;width:58px;height:58px;border-radius:50%;background:linear-gradient(180deg,#fff 0%,#faf8ff 100%);border:4px solid var(--ring);box-shadow:0 0 0 2px #fff,0 4px 12px #0004,0 0 14px color-mix(in srgb,var(--ring) 48%,transparent);display:flex;align-items:center;justify-content:center;overflow:hidden;backface-visibility:visible;transform-style:preserve-3d}
      .finder-special-marker .badge-circle img{display:block;width:72%;height:72%;object-fit:contain;user-select:none;-webkit-user-drag:none}
@@ -539,10 +540,34 @@ function rebuildBoothCatalog(){
    const file=kind==='premium'?'premium-booth-badge.png':kind==='awards'?'awards-booth-badge.png':'event-booth-badge.png';
    return new URL('../assets/images/'+file+'?v=20260727-dom-marker2',FINDER_APP_SCRIPT_URL).href;
  }
+ function specialBadgeScaleForZoom(zoom){
+   const relative=threeLabelScaleForZoom(zoom)/1.04;
+   return Math.max(.40,Math.min(1,relative));
+ }
+ function specialBadgeOffsetFor(item,scale){
+   const lines=boothLabelLines(item);
+   const labelSpace=lines.length>1?25:17;
+   const badgeRadius=34;
+   const gap=7;
+   return (labelSpace+badgeRadius+gap)*scale;
+ }
+ function updateSpecialMarkerLayout(){
+   if(!specialMarkers.length)return;
+   const scale=specialBadgeScaleForZoom(map.getZoom());
+   for(const entry of specialMarkers){
+     entry.root?.style.setProperty('--finder-badge-scale',String(scale));
+     const offsetY=-specialBadgeOffsetFor(entry.item,scale);
+     entry.marker?.setOffset?.([0,offsetY]);
+   }
+ }
  function rebuildSpecialMarkers(){
    ensureSpecialMarkerStyles();
-   while(specialMarkers.length){const marker=specialMarkers.pop();marker?.remove?.();}
+   while(specialMarkers.length){
+     const entry=specialMarkers.pop();
+     (entry?.marker||entry)?.remove?.();
+   }
    if(getDisplayOptions().showSpecialBooths===false)return;
+   refreshBoothTopFeatureIndex();
    const runtimeSpecialBooths=getSpecialBooths();
    for(const item of boothCatalog){
      const kind=String(runtimeSpecialBooths[item.booth]||'').trim();
@@ -550,6 +575,7 @@ function rebuildBoothCatalog(){
      const root=document.createElement('div');
      root.className='finder-special-marker '+kind;
      root.setAttribute('aria-hidden','true');
+     const scaleLayer=document.createElement('div');scaleLayer.className='badge-scale';
      const motion=document.createElement('div');motion.className='badge-motion';
      const circle=document.createElement('div');circle.className='badge-circle';
      const image=document.createElement('img');
@@ -560,12 +586,21 @@ function rebuildBoothCatalog(){
        fallback.textContent=kind==='premium'?'◇':kind==='awards'?'♛':'●';
        circle.appendChild(fallback);
      };
-     circle.appendChild(image);motion.appendChild(circle);root.appendChild(motion);
-     const marker=new maplibregl.Marker({element:root,anchor:'bottom',offset:[0,-34],pitchAlignment:'viewport',rotationAlignment:'viewport'})
-       .setLngLat(item.coord)
-       .addTo(map);
-     specialMarkers.push(marker);
+     circle.appendChild(image);motion.appendChild(circle);scaleLayer.appendChild(motion);root.appendChild(scaleLayer);
+     const feature=boothTopFeatureByBooth.get(String(item.booth));
+     const labelAltitude=boothFeatureHeight(feature)+2.4;
+     const marker=new maplibregl.Marker({
+       element:root,
+       anchor:'center',
+       offset:[0,0],
+       altitude:labelAltitude,
+       pitchAlignment:'viewport',
+       rotationAlignment:'viewport'
+     }).setLngLat(item.coord).addTo(map);
+     if(typeof marker.setAltitude==='function')marker.setAltitude(labelAltitude);
+     specialMarkers.push({marker,root,item,kind,labelAltitude});
    }
+   updateSpecialMarkerLayout();
  }
  function boothLabelGeoJSON(){return {type:'FeatureCollection',features:boothCatalog.filter(item=>validLngLatCoord(item.coord)).map((item,index)=>({type:'Feature',id:index,properties:{booth:item.booth,name:item.name||'',text:boothLabelText(item)},geometry:{type:'Point',coordinates:item.coord}}))};}
  function updateBoothLabelLayer(){
@@ -777,7 +812,7 @@ function rebuildBoothCatalog(){
    }});
    const locations=rebuildLocationControls();const destSelect=document.getElementById('destSelect');destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');fit();updateLabelDetail();setStatus('');
  });
- map.on('zoom',updateLabelDetail);
+ map.on('zoom',()=>{updateLabelDetail();updateSpecialMarkerLayout();});
  map.on('click','booth-extrusion',e=>{const f=e.features&&e.features[0];if(!f)return;const item=boothCatalog.find(x=>x.booth===f.properties.booth)||{booth:f.properties.booth,name:f.properties.name,category:f.properties.category,coord:[e.lngLat.lng,e.lngLat.lat]};openSelection(item,f.id,[e.lngLat.lng,e.lngLat.lat]);});
  map.on('click',e=>{if(!map.queryRenderedFeatures(e.point,{layers:['booth-extrusion']}).length)results.classList.remove('open');});
  map.on('mouseenter','booth-extrusion',()=>map.getCanvas().style.cursor='pointer'); map.on('mouseleave','booth-extrusion',()=>map.getCanvas().style.cursor='');
