@@ -474,3 +474,73 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
   .special-badge-title::before,
   .special-badge-title::after{animation:none!important}
 }
+
+
+/* 2026-07-27: contextual bottom route menu + compact sheets. */
+@media(max-width:760px){
+  .bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .bottom-nav button{min-width:0;padding:8px 2px 7px;font-size:9.5px;letter-spacing:-.22px}
+  .bottom-nav button[data-mobile-action="expo"]{font-size:8.2px;letter-spacing:-.55px}
+  .bottom-nav button[data-mobile-action="route"]{font-size:9px;letter-spacing:-.45px}
+  .bottom-nav .bottom-nav-route-label{display:block!important;margin:0!important;font-size:9px!important;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .booth-detail-panel.panel:not(.stage-panel){
+    height:clamp(215px,30dvh,255px);
+    max-height:clamp(215px,30dvh,255px);
+  }
+  .booth-detail-panel .panel-head{min-height:63px}
+
+  .stage-panel.panel{
+    left:0;
+    right:0;
+    bottom:72px;
+    width:100%;
+    max-width:none;
+    max-height:min(330px,42dvh);
+    padding:20px 16px 14px;
+    border-radius:20px 20px 0 0;
+    box-shadow:0 -10px 30px rgba(12,32,64,.18);
+    border-top:1px solid rgba(205,218,235,.9);
+    overflow:hidden;
+  }
+  .stage-panel .detail-grid{
+    max-height:190px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .modal{transform:translateY(var(--expo-drag-y,0px));transition:transform .22s ease;overflow:hidden;display:flex;flex-direction:column}
+  .modal-backdrop.modal-dragging .modal{transition:none;user-select:none}
+  .modal-header{position:relative;flex:0 0 auto;padding-top:27px}
+  .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .modal-grabber{
+    display:block;
+    position:absolute;
+    z-index:4;
+    top:0;
+    left:50%;
+    width:76px;
+    height:25px;
+    padding:0;
+    border:0;
+    border-radius:999px;
+    background:transparent;
+    transform:translateX(-50%);
+    touch-action:none;
+    cursor:grab;
+  }
+  .modal-grabber::after{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:8px;
+    width:42px;
+    height:4px;
+    border-radius:999px;
+    background:#aeb8c5;
+    transform:translateX(-50%);
+  }
+  .modal-backdrop.modal-dragging .modal-grabber::after{background:#5f7896}
+}
+@media(min-width:761px){.modal-grabber{display:none}}

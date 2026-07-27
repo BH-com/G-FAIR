@@ -64,6 +64,7 @@
  let boothThreeLayer=null, threeLoadPromise=null;
  const programUrlParams=new URLSearchParams(location.search);
  const programTimeParam=programUrlParams.get('programTime')||'';
+ const routeEntryLocationParam=String(programUrlParams.get('loc')||'').trim();
  let programTestNow=programTimeParam?new Date(programTimeParam):null;
  if(programTestNow&&Number.isNaN(programTestNow.getTime()))programTestNow=null;
  let programBadgeSignature='',activeProgramDate='';
@@ -666,6 +667,19 @@ function rebuildBoothCatalog(){
    const collection=runtime&&runtime.type==='FeatureCollection'&&Array.isArray(runtime.features)?runtime:data.locations;
    return (collection?.features||[]).filter(feature=>feature?.geometry?.type==='Point'&&routeCoordValid(feature.geometry.coordinates));
  }
+ function preferredRouteLocationIndex(locations=currentLocationFeatures()){
+   if(!routeEntryLocationParam)return-1;
+   const key=routeEntryLocationParam.toLowerCase();
+   return locations.findIndex(feature=>String(feature.properties?.name||feature.properties?.code||'').trim().toLowerCase()===key);
+ }
+ function orderedLocationEntries(){
+   const locations=currentLocationFeatures(),preferred=preferredRouteLocationIndex(locations);
+   return locations.map((feature,index)=>({feature,index})).sort((a,b)=>{
+     if(a.index===preferred)return-1;
+     if(b.index===preferred)return 1;
+     return a.index-b.index;
+   });
+ }
  function locationGeoJSON(){
    return {type:'FeatureCollection',features:currentLocationFeatures().map((feature,index)=>({
      type:'Feature',id:index,
@@ -678,22 +692,20 @@ function rebuildBoothCatalog(){
    return feature&&routeCoordValid(feature.geometry?.coordinates)?[Number(feature.geometry.coordinates[0]),Number(feature.geometry.coordinates[1])]:null;
  }
  function rebuildLocationControls(){
-   const locations=currentLocationFeatures();
+   const locations=currentLocationFeatures(),ordered=orderedLocationEntries();
    const startSelect=document.getElementById('startSelect');
    if(startSelect){
      const previous=startSelect.value;
-     startSelect.innerHTML=locations.map((feature,index)=>`<option value="${index}">${escapeHtml(feature.properties?.name||feature.properties?.code||('위치 '+(index+1)))}</option>`).join('');
+     startSelect.innerHTML='<option value="">출발지 선택·검색</option>'+ordered.map(({feature,index})=>`<option value="${index}">${escapeHtml(feature.properties?.name||feature.properties?.code||('위치 '+(index+1)))}</option>`).join('');
      startSelect.disabled=!locations.length;
-     if(locations.length)startSelect.value=previous!==''&&locations[Number(previous)]?previous:'0';
-     else startSelect.value='';
+     startSelect.value=previous!==''&&locations[Number(previous)]?previous:'';
    }
    const routeGo=document.getElementById('routeGo');
    if(routeGo)routeGo.disabled=!locations.length&&!boothCatalog.length;
-   if(!routeStartChoice&&locations.length)syncRouteStartComboboxFromSelect();
    return locations;
  }
  function routeOriginItems(){
-   const locations=currentLocationFeatures().map((feature,index)=>({
+   const locations=orderedLocationEntries().map(({feature,index})=>({
      type:'location',index,coord:[Number(feature.geometry.coordinates[0]),Number(feature.geometry.coordinates[1])],
      label:String(feature.properties?.name||feature.properties?.code||('위치 '+(index+1))),
      search:`${feature.properties?.name||''} ${feature.properties?.code||''} 지점 위치 입구 QR`.toLowerCase()
@@ -865,13 +877,47 @@ function rebuildBoothCatalog(){
      event.preventDefault();setBoothSheetExpanded(!panel.classList.contains('sheet-expanded'));
    });
  }
+ function resetExpoModalDrag(){
+   const backdrop=document.getElementById('expoModal'),modal=backdrop?.querySelector('.modal');
+   backdrop?.classList.remove('modal-dragging');
+   modal?.style.removeProperty('--expo-drag-y');
+ }
+ function setupExpoSheetGesture(){
+   const backdrop=document.getElementById('expoModal'),modal=backdrop?.querySelector('.modal'),grabber=document.getElementById('expoGrabber');
+   if(!backdrop||!modal||!grabber)return;
+   let tracking=false,startY=0,lastY=0,startTime=0,pointerId=null,didDrag=false;
+   const finish=(event,cancelled=false)=>{
+     if(!tracking)return;
+     const y=Number(event?.clientY??lastY),delta=Math.max(0,y-startY),elapsed=Math.max(1,Number(event?.timeStamp||performance.now())-startTime),velocity=delta/elapsed;
+     tracking=false;backdrop.classList.remove('modal-dragging');
+     if(pointerId!=null&&grabber.hasPointerCapture?.(pointerId)){try{grabber.releasePointerCapture(pointerId)}catch(_){}}
+     pointerId=null;
+     if(!cancelled&&(delta>92||velocity>.58)){closeExhibition();return;}
+     modal.style.removeProperty('--expo-drag-y');
+   };
+   grabber.addEventListener('pointerdown',event=>{
+     if(!isMobileLayout()||!backdrop.classList.contains('open'))return;
+     if(event.pointerType==='mouse'&&event.button!==0)return;
+     tracking=true;didDrag=false;pointerId=event.pointerId;startY=lastY=event.clientY;startTime=event.timeStamp||performance.now();
+     backdrop.classList.add('modal-dragging');grabber.setPointerCapture?.(pointerId);event.preventDefault();
+   });
+   grabber.addEventListener('pointermove',event=>{
+     if(!tracking||event.pointerId!==pointerId)return;
+     lastY=event.clientY;const delta=Math.max(0,lastY-startY);if(delta>5)didDrag=true;
+     modal.style.setProperty('--expo-drag-y',`${delta}px`);event.preventDefault();
+   });
+   grabber.addEventListener('pointerup',event=>finish(event,false));
+   grabber.addEventListener('pointercancel',event=>finish(event,true));
+   grabber.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='Escape'){event.preventDefault();closeExhibition();}});
+   grabber.addEventListener('click',event=>{if(didDrag)event.preventDefault();});
+ }
  function syncMobileViewportHeight(){
    const height=Math.round(window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight||0);
    if(height>0)document.documentElement.style.setProperty('--app-vh',`${height}px`);
  }
  function refreshSelectedBoothColor(){const source=map.getSource('booths');if(source)source.setData(boothDisplayGeoJSON());}
- function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');refreshSelectedBoothColor();rebuildThreeLabels();}
- function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');resetBoothSheet();panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();}
+ function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');refreshSelectedBoothColor();rebuildThreeLabels();updateBottomNavState();}
+ function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');resetBoothSheet();panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();updateBottomNavState();}
  function findFeatureId(booth){const index=(data.booths?.features||[]).findIndex(feature=>String(feature.properties?.booth||'')===String(booth||''));if(index<0)return null;const feature=data.booths.features[index];return feature.id??feature.properties?._editId??index;}
  function selectLabel(item,fly=true){const id=findFeatureId(item.booth);openSelection(item,id,item.coord);if(fly)map.easeTo({center:item.coord,zoom:15.55,pitch:48,bearing:map.getBearing(),duration:650});}
  function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
@@ -971,36 +1017,57 @@ function rebuildBoothCatalog(){
  const mobileMedia=window.matchMedia('(max-width:760px)');
  let mobileMode='map';
  function isMobileLayout(){return mobileMedia.matches;}
+ function selectedBoothRouteTarget(){return selectedLabel&&!activeProgramPlace&&selectedLabel.booth&&routeCoordValid(selectedLabel.coord)?selectedLabel:null;}
+ function updateBottomNavState(){
+   const target=selectedBoothRouteTarget(),routeButton=document.querySelector('.bottom-nav [data-mobile-action="route"]'),routeLabel=document.getElementById('mobileRouteNavLabel');
+   if(routeLabel)routeLabel.textContent=target?'여기로 길찾기':'길찾기';
+   if(routeButton)routeButton.setAttribute('aria-label',target?`${target.booth} 여기로 길찾기`:'길찾기 열기');
+   document.querySelectorAll('.bottom-nav [data-mobile-action]').forEach(button=>{
+     const action=button.dataset.mobileAction;
+     const active=(action==='search'&&mobileMode==='search')||(action==='expo'&&mobileMode==='expo')||(action==='route'&&!!target&&(mobileMode==='map'||mobileMode==='route'));
+     button.classList.toggle('active',active);
+     button.setAttribute('aria-pressed',active?'true':'false');
+   });
+ }
  function setMobileMode(mode,{focusSearch=false,closeModal=true}={}){
    const allowed=new Set(['map','search','route','expo']);
    mobileMode=allowed.has(mode)?mode:'map';
    if(!isMobileLayout())return;
    document.body.dataset.mobileMode=mobileMode;
-   const navMode=mobileMode==='route'?'map':mobileMode;
-   document.querySelectorAll('.bottom-nav [data-mobile-action]').forEach(button=>{
-     const active=button.dataset.mobileAction===navMode;
-     button.classList.toggle('active',active);
-     button.setAttribute('aria-pressed',active?'true':'false');
-   });
+   updateBottomNavState();
    if(mobileMode!=='search'){
      results.classList.remove('open');
      input.blur();
    }
-   if(closeModal&&mobileMode!=='expo')document.getElementById('expoModal')?.classList.remove('open');
+   if(closeModal&&mobileMode!=='expo'){
+     document.getElementById('expoModal')?.classList.remove('open');
+     resetExpoModalDrag();
+   }
    if(mobileMode==='search'&&focusSearch)setTimeout(()=>input.focus({preventScroll:true}),60);
    requestAnimationFrame(()=>map.resize());
  }
+ function openRouteFromBottomNav(){
+   const target=selectedBoothRouteTarget();
+   if(target){
+     const idx=boothCatalog.findIndex(item=>item.booth===target.booth);
+     if(idx>=0)document.getElementById('destSelect').value=String(idx);
+     resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');
+   }
+   setMobileMode('route');
+ }
  document.querySelectorAll('.bottom-nav [data-mobile-action]').forEach(button=>button.addEventListener('click',()=>{
    const mode=button.dataset.mobileAction;
-   if(mobileMode==='route'&&mode!=='route')clearRoute();
-   if(mode==='expo')setMobileMode('expo',{closeModal:false});
+   if(mode==='map'){
+     clearRoute();clearSelected();document.getElementById('expoModal')?.classList.remove('open');resetExpoModalDrag();setMobileMode('map',{closeModal:false});
+   }else if(mode==='route')openRouteFromBottomNav();
+   else if(mode==='expo')setMobileMode('expo',{closeModal:false});
    else setMobileMode(mode,{focusSearch:mode==='search'});
  }));
  mobileMedia.addEventListener?.('change',()=>{
    if(isMobileLayout())setMobileMode(mobileMode,{closeModal:false});
    else{delete document.body.dataset.mobileMode;requestAnimationFrame(()=>map.resize());}
  });
- syncMobileViewportHeight();setupBoothSheetGesture();
+ syncMobileViewportHeight();setupBoothSheetGesture();setupExpoSheetGesture();
  window.visualViewport?.addEventListener('resize',()=>{syncMobileViewportHeight();requestAnimationFrame(()=>map.resize());});
  window.addEventListener('orientationchange',()=>setTimeout(()=>{syncMobileViewportHeight();map.resize();},80));
  if(isMobileLayout())setMobileMode('map',{closeModal:false});
@@ -1010,7 +1077,6 @@ function rebuildBoothCatalog(){
  document.getElementById('routeClear').onclick=clearRoute;
  const routeCardClose=document.getElementById('routeCardClose');
  if(routeCardClose)routeCardClose.onclick=()=>{clearRoute();if(isMobileLayout())setMobileMode('map');};
- document.getElementById('panelRoute').onclick=()=>{if(!selectedLabel?.coord)return;const start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');if(isMobileLayout())setMobileMode('route');return;}resetBoothSheet();if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(x=>x.booth===selectedLabel.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);requestAnimationFrame(()=>routeTo(start.coord,selectedLabel,start.label));};
  function refreshFromProjectStore(){
    applyBranding();
    const openProgramBooth=activeProgramPlace?.booth||'';
@@ -1020,7 +1086,7 @@ function rebuildBoothCatalog(){
    rebuildThreeLabels();
    const source=map.getSource('routes');if(source)source.setData(routeGeoFromGraph());
    const locationSource=map.getSource('locations');if(locationSource)locationSource.setData(locationGeoJSON());
-   const locations=rebuildLocationControls();if(!routeStartChoice)syncRouteStartComboboxFromSelect();
+   rebuildLocationControls();
    const destSelect=document.getElementById('destSelect');if(destSelect)destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');
    if(openProgramBooth){const updated=programPlaceForBooth(openProgramBooth);if(updated){activeProgramPlace={...activeProgramPlace,...updated};renderProgramPlacePanel(activeProgramPlace)}else clearSelected()}
    programBadgeSignature='';refreshTimedProgramState(true);
@@ -1128,7 +1194,7 @@ function rebuildBoothCatalog(){
    clearSelected();selectedId=id;selectedBoothKey=String(item.booth||place.booth||'');selectedLabel=coord?{...item,coord}:item;activeProgramPlace={...place,coord:selectedLabel?.coord,item:selectedLabel};
    refreshSelectedBoothColor();
    panel.classList.remove('open');renderProgramPlacePanel(activeProgramPlace);document.getElementById('stagePanel').classList.add('open');
-   setStatus(`프로그램 장소: ${place.booth} ${place.name}`);rebuildThreeLabels();
+   setStatus(`프로그램 장소: ${place.booth} ${place.name}`);rebuildThreeLabels();updateBottomNavState();
  }
  function updateBoothDetail(item){
    const detail=content.companyDetails?.[item.booth]||{};
@@ -1139,9 +1205,10 @@ function rebuildBoothCatalog(){
    if(link){if(detail.website){link.href=detail.website;link.style.display='inline-block'}else link.style.display='none'}
    const type=String(getSpecialBooths()[item.booth]||'').toLowerCase();
    const specialMeta={
-     premium:{subtitle:'프리미엄 부스',icon:'assets/images/premium-booth-badge-clean.png'},
-     awards:{subtitle:'어워즈 부스',icon:'assets/images/awards-booth-badge-clean.png'},
-     event:{subtitle:'이벤트 부스',icon:'assets/images/event-booth-badge-clean.png'}
+     premium:{title:'SPECIAL',subtitle:'프리미엄 부스',icon:'assets/images/premium-booth-badge-clean.png'},
+     awards:{title:'AWARDS',subtitle:'어워즈 부스',icon:'assets/images/awards-booth-badge-clean.png'},
+     event:{title:'EVENTS',subtitle:'이벤트 부스',icon:'assets/images/event-booth-badge-clean.png'},
+     events:{title:'EVENTS',subtitle:'이벤트 부스',icon:'assets/images/event-booth-badge-clean.png'}
    }[type];
    if(badge){
      badge.className='special-badge';
@@ -1149,13 +1216,13 @@ function rebuildBoothCatalog(){
      badge.removeAttribute('aria-label');
      if(specialMeta){
        badge.classList.add('show',type);
-       badge.setAttribute('aria-label',`SPECIAL ${specialMeta.subtitle}`);
-       badge.innerHTML=`<span class="special-badge-icon" aria-hidden="true"><img src="${specialMeta.icon}?v=20260727-clean-circle1" alt=""></span><span class="special-badge-copy"><strong class="special-badge-title">SPECIAL</strong><small class="special-badge-subtitle">${specialMeta.subtitle}</small></span>`;
+       badge.setAttribute('aria-label',`${specialMeta.title} ${specialMeta.subtitle}`);
+       badge.innerHTML=`<span class="special-badge-icon" aria-hidden="true"><img src="${specialMeta.icon}?v=20260727-clean-circle1" alt=""></span><span class="special-badge-copy"><strong class="special-badge-title">${specialMeta.title}</strong><small class="special-badge-subtitle">${specialMeta.subtitle}</small></span>`;
      }
    }
  }
- function openExhibition(){if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('expo',{closeModal:false});document.getElementById('expoModal').classList.add('open');renderPrograms();renderDocuments();}
- function closeExhibition(){document.getElementById('expoModal').classList.remove('open');if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('map',{closeModal:false});}
+ function openExhibition(){resetExpoModalDrag();if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('expo',{closeModal:false});document.getElementById('expoModal').classList.add('open');updateBottomNavState();renderPrograms();renderDocuments();}
+ function closeExhibition(){document.getElementById('expoModal').classList.remove('open');resetExpoModalDrag();if(typeof setMobileMode==='function'&&isMobileLayout())setMobileMode('map',{closeModal:false});else updateBottomNavState();}
  function renderPrograms(){
    const box=document.getElementById('programList'),tabs=document.getElementById('programTabs');if(!box)return;
    const all=allProgramEntries(),dates=[...new Set(all.map(item=>item.date).filter(Boolean))].sort();
@@ -1169,12 +1236,11 @@ function rebuildBoothCatalog(){
  document.querySelectorAll('[data-expo-open]').forEach(b=>b.addEventListener('click',openExhibition));
  document.getElementById('expoClose').addEventListener('click',closeExhibition);
  document.getElementById('expoModal').addEventListener('click',e=>{if(e.target.id==='expoModal')closeExhibition();});
- // QR URL entry: ?loc=QR-1
- const qrLoc=new URLSearchParams(location.search).get('loc');
- if(qrLoc){const locations=currentLocationFeatures();const locIndex=locations.findIndex(f=>String(f.properties?.name||f.properties?.code||'').toLowerCase()===qrLoc.toLowerCase());const loc=locations[locIndex];if(loc){map.once('load',()=>{map.easeTo({center:[Number(loc.geometry.coordinates[0]),Number(loc.geometry.coordinates[1])],zoom:17,pitch:48,duration:800});const chip=document.getElementById('qrChip');const locName=loc.properties?.name||loc.properties?.code||qrLoc;chip.textContent=`현재 위치: ${locName}`;chip.classList.add('show');setTimeout(()=>chip.classList.remove('show'),4500);const sel=document.getElementById('startSelect');if(sel){sel.value=String(locIndex);syncRouteStartComboboxFromSelect();}});}}
+ // QR URL entry: ?loc=QR-1. The matching entry is listed first, but is not auto-selected.
+ const qrLoc=routeEntryLocationParam;
+ if(qrLoc){const locations=currentLocationFeatures();const locIndex=locations.findIndex(f=>String(f.properties?.name||f.properties?.code||'').toLowerCase()===qrLoc.toLowerCase());const loc=locations[locIndex];if(loc){map.once('load',()=>{map.easeTo({center:[Number(loc.geometry.coordinates[0]),Number(loc.geometry.coordinates[1])],zoom:17,pitch:48,duration:800});const chip=document.getElementById('qrChip');const locName=loc.properties?.name||loc.properties?.code||qrLoc;chip.textContent=`현재 위치: ${locName}`;chip.classList.add('show');setTimeout(()=>chip.classList.remove('show'),4500);clearRouteStartSearch();});}}
  // 프로그램은 별도 중앙 마커를 만들지 않고, 일정에 등록된 부스 클릭으로 표시합니다.
  document.getElementById('stageClose').addEventListener('click',clearSelected);
- document.getElementById('stageRoute').addEventListener('click',()=>{if(!activeProgramPlace?.item?.coord)return;const start=resolveRouteStart();if(!start){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');if(isMobileLayout())setMobileMode('route');return;}if(isMobileLayout())setMobileMode('route');const idx=boothCatalog.findIndex(item=>item.booth===activeProgramPlace.booth);if(idx>=0)document.getElementById('destSelect').value=String(idx);routeTo(start.coord,activeProgramPlace.item,start.label);});
  setupProgramTestClock();
  if(map.loaded())refreshTimedProgramState(true);else map.once('load',()=>refreshTimedProgramState(true));
  setInterval(()=>refreshTimedProgramState(false),30000);

@@ -6,7 +6,7 @@
   function loadApp() {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'js/app.js?v=20260727-route-origin-combobox1';
+      script.src = 'js/app.js?v=20260727-nav-route-sheet2';
       script.onload = resolve;
       script.onerror = () => reject(new Error('사용자 화면 프로그램을 불러오지 못했습니다.'));
       document.body.appendChild(script);
