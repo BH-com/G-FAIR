@@ -139,22 +139,48 @@
    threeLoadPromise=import(url);
    return threeLoadPromise;
  }
+ const SPECIAL_BADGE_ASSET_URLS={
+   premium:'../assets/images/premium-booth-badge.png',
+   awards:'../assets/images/awards-booth-badge.png',
+   event:'../assets/images/event-booth-badge.png'
+ };
+ let specialBadgeAssetsPromise=null,specialBadgeAssets=null;
+ function loadBadgeImage(src){
+   return new Promise((resolve,reject)=>{
+     const img=new Image();
+     img.decoding='async';
+     img.onload=()=>resolve(img);
+     img.onerror=()=>reject(new Error('special badge image load failed: '+src));
+     img.src=new URL(src,FINDER_APP_SCRIPT_URL).href;
+   });
+ }
+ function loadSpecialBadgeAssets(){
+   if(specialBadgeAssets)return Promise.resolve(specialBadgeAssets);
+   if(specialBadgeAssetsPromise)return specialBadgeAssetsPromise;
+   specialBadgeAssetsPromise=Promise.all(Object.entries(SPECIAL_BADGE_ASSET_URLS).map(([kind,src])=>loadBadgeImage(src).then(image=>[kind,image]))).then(items=>{
+     specialBadgeAssets=Object.fromEntries(items);
+     return specialBadgeAssets;
+   }).catch(error=>{
+     console.warn(error);
+     specialBadgeAssets={};
+     return specialBadgeAssets;
+   });
+   return specialBadgeAssetsPromise;
+ }
  function threeLabelScaleForZoom(zoom){
    const z=Number(zoom)||0;
-   // 전체 전시장 배치를 보는 축소 구간에서는 부스 형태가 우선입니다.
    if(z<=12.2)return 0.22;
-   // 두 번째 참고 이미지 수준까지 라벨을 서서히 키웁니다.
    if(z<15.4){
      const t=Math.max(0,Math.min(1,(z-12.2)/(15.4-12.2)));
      const eased=t*t*(3-2*t);
      return 0.22+(0.90-0.22)*eased;
    }
-   // 이 구간부터는 지점 저장·길찾기 수정본의 기존 크기를 그대로 사용합니다.
    return 1.04;
  }
  function makeThreeLabelAtlas(){
    const canvas=document.createElement('canvas');canvas.width=4096;canvas.height=2048;
    const ctx=canvas.getContext('2d',{alpha:true});ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=true;
+   const badgeImages=specialBadgeAssets||{};
    let x=4,y=4,rowH=0;const entries=new Map();
    function reserve(w,h){
      if(x+w+4>canvas.width){x=4;y+=rowH+4;rowH=0;}
@@ -178,119 +204,87 @@
      });
      entries.set(key,{u0:slot.x/canvas.width,v0:1-(slot.y+slot.h)/canvas.height,u1:(slot.x+slot.w)/canvas.width,v1:1-slot.y/canvas.height,w:slot.w/2,h:slot.h/2});
    }
+   function drawSparkles(boxX,boxY,boxW,boxH,color,variant='default'){
+     const patterns={
+       default:[{x:.16,y:.22,r:8},{x:.82,y:.2,r:7},{x:.73,y:.76,r:9},{x:.24,y:.84,r:6}],
+       awards:[{x:.18,y:.19,r:8},{x:.84,y:.24,r:7},{x:.72,y:.78,r:8}],
+       event:[{x:.14,y:.23,r:7},{x:.5,y:.09,r:9},{x:.82,y:.22,r:7},{x:.78,y:.8,r:8}]
+     };
+     const stars=patterns[variant]||patterns.default;
+     ctx.save();
+     ctx.fillStyle=color;
+     ctx.globalAlpha=.95;
+     for(const star of stars){
+       const cx=boxX+boxW*star.x,cy=boxY+boxH*star.y,r=star.r;
+       ctx.beginPath();
+       ctx.moveTo(cx,cy-r);
+       ctx.lineTo(cx+r*.34,cy-r*.34);
+       ctx.lineTo(cx+r,cy);
+       ctx.lineTo(cx+r*.34,cy+r*.34);
+       ctx.lineTo(cx,cy+r);
+       ctx.lineTo(cx-r*.34,cy+r*.34);
+       ctx.lineTo(cx-r,cy);
+       ctx.lineTo(cx-r*.34,cy-r*.34);
+       ctx.closePath();
+       ctx.fill();
+     }
+     ctx.restore();
+   }
+   function addImageEntry(key,image,kind){
+     if(entries.has(key)||!image)return;
+     const frameW=96,frameH=96,pad=8;
+     const slot=reserve(frameW+pad*2,frameH+pad*2);if(!slot)return;
+     const boxX=slot.x+pad,boxY=slot.y+pad,boxW=frameW,boxH=frameH;
+     const ratio=(image.width||1)/(image.height||1);
+     const maxW=boxW*.74,maxH=boxH*.74;
+     let drawW=maxW,drawH=maxW/ratio;
+     if(drawH>maxH){drawH=maxH;drawW=drawH*ratio;}
+     const drawX=boxX+(boxW-drawW)/2,drawY=boxY+(boxH-drawH)/2;
+     const sparkleColor=kind==='awards'?'rgba(255,214,102,.95)':(kind==='event'?'rgba(255,236,120,.95)':'rgba(154,226,255,.95)');
+     drawSparkles(boxX,boxY,boxW,boxH,sparkleColor,kind==='awards'?'awards':(kind==='event'?'event':'default'));
+     ctx.drawImage(image,drawX,drawY,drawW,drawH);
+     entries.set(key,{u0:slot.x/canvas.width,v0:1-(slot.y+slot.h)/canvas.height,u1:(slot.x+slot.w)/canvas.width,v1:1-slot.y/canvas.height,w:slot.w/2,h:slot.h/2});
+   }
    for(const item of boothCatalog){const lines=boothLabelLines(item);if(lines.length)addLinesEntry('__label_'+item.booth,lines,lines.length>1?110:62,lines.length>1?34:26,14);}
-   addLinesEntry('__badge_premium',[{text:'◆',font:'700 36px Arial, sans-serif',fill:'#6d3ee8',lineHeight:40,strokeWidth:7}],54,18,12);
-   addLinesEntry('__badge_awards',[{text:'♛',font:'700 38px Arial, sans-serif',fill:'#f2a000',lineHeight:42,strokeWidth:7}],58,18,12);
-   addLinesEntry('__badge_event',[{text:'✦',font:'700 40px Arial, sans-serif',fill:'#ef476f',lineHeight:42,strokeWidth:7}],54,18,12);
+   addImageEntry('__badge_premium',badgeImages.premium,'premium');
+   addImageEntry('__badge_awards',badgeImages.awards,'awards');
+   addImageEntry('__badge_event',badgeImages.event,'event');
    addLinesEntry('__program_soon',[{text:'◷ 곧 행사',font:'700 24px Arial, sans-serif',fill:'#f59e0b',lineHeight:32,strokeWidth:8}],104,24,12);
    addLinesEntry('__program_live',[{text:'● 행사중',font:'700 24px Arial, sans-serif',fill:'#ef3340',lineHeight:32,strokeWidth:8}],100,24,12);
    return {canvas,entries};
- }
-
- function createPremiumDiamondGeometry(THREE){
-   const geometry=new THREE.BufferGeometry(),positions=[];
-   const segments=8,topRadius=.58,girdleRadius=1,topZ=.44,girdleZ=0,bottomZ=-1.30;
-   const topCenter=[0,0,topZ],bottom=[0,0,bottomZ],topRing=[],girdle=[];
-   for(let i=0;i<segments;i++){
-     const angle=Math.PI/8+i*Math.PI*2/segments;
-     topRing.push([Math.cos(angle)*topRadius,Math.sin(angle)*topRadius,topZ]);
-     girdle.push([Math.cos(angle)*girdleRadius,Math.sin(angle)*girdleRadius,girdleZ]);
-   }
-   const addTri=(a,b,c,materialIndex)=>{
-     const start=positions.length/3;
-     positions.push(...a,...b,...c);
-     geometry.addGroup(start,3,materialIndex);
-   };
-   for(let i=0;i<segments;i++){
-     const n=(i+1)%segments;
-     addTri(topCenter,topRing[i],topRing[n],0);
-     addTri(topRing[i],girdle[i],girdle[n],1+(i%4));
-     addTri(topRing[i],girdle[n],topRing[n],1+((i+1)%4));
-     addTri(girdle[i],bottom,girdle[n],5+(i%3));
-   }
-   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-   geometry.computeVertexNormals();
-   geometry.computeBoundingSphere();
-   return geometry;
- }
- function createPremiumDiamondMaterials(THREE){
-   const colors=['#fffdfd','#dffbff','#e9ddff','#ffd8fa','#bda5ff','#8b70df','#6e49bc','#4e2d8e'];
-   return colors.map((color,index)=>new THREE.MeshPhysicalMaterial({
-     color,
-     roughness:index===0?.08:.16,
-     metalness:.04,
-     clearcoat:1,
-     clearcoatRoughness:.06,
-     iridescence:.9,
-     iridescenceIOR:1.35,
-     transparent:true,
-     opacity:index===0?.98:.94,
-     flatShading:true,
-     side:THREE.DoubleSide,
-     depthTest:true,
-     depthWrite:true
-   }));
- }
- function createPremiumDiamondMesh(THREE,phase=0){
-   const group=new THREE.Group();
-   const geometry=createPremiumDiamondGeometry(THREE),materials=createPremiumDiamondMaterials(THREE);
-   const core=new THREE.Mesh(geometry,materials);core.renderOrder=4;core.frustumCulled=false;
-   const glow=new THREE.Mesh(geometry.clone(),new THREE.MeshBasicMaterial({
-     color:'#efe5ff',transparent:true,opacity:.14,blending:THREE.AdditiveBlending,
-     side:THREE.BackSide,depthTest:false,depthWrite:false
-   }));
-   glow.scale.setScalar(1.08);glow.renderOrder=3;glow.frustumCulled=false;
-   group.add(glow,core);
-   group.userData={phase,core,glow,materials,coord:null};
-   group.frustumCulled=false;
-   return group;
- }
- function disposePremiumDiamond(group){
-   const core=group?.userData?.core,glow=group?.userData?.glow;
-   core?.geometry?.dispose();
-   const materials=Array.isArray(core?.material)?core.material:[core?.material];
-   materials.filter(Boolean).forEach(material=>material.dispose?.());
-   glow?.geometry?.dispose();glow?.material?.dispose?.();
- }
- function mercatorUnitsPerCssPixel(mapInstance,coord){
-   const point=mapInstance.project({lng:Number(coord[0]),lat:Number(coord[1])});
-   const shifted=mapInstance.unproject([point.x+1,point.y]);
-   const a=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},0);
-   const b=maplibregl.MercatorCoordinate.fromLngLat(shifted,0);
-   return Math.max(1e-12,Math.hypot(b.x-a.x,b.y-a.y));
  }
  function createThreeLabelLayer(THREE){
    return {
      id:'booth-top-labels-three',type:'custom',renderingMode:'3d',
      onAdd(mapInstance,gl){
        this.map=mapInstance;this.THREE=THREE;this.camera=new THREE.Camera();this.scene=new THREE.Scene();
-       this.premiumGroup=new THREE.Group();this.premiumDiamonds=[];this.scene.add(this.premiumGroup);
-       this.scene.add(new THREE.HemisphereLight(0xffffff,0x5a348c,2.1));
-       const premiumKeyLight=new THREE.DirectionalLight(0xffffff,2.6);premiumKeyLight.position.set(1.2,-1.4,2.8);this.scene.add(premiumKeyLight);
        this.renderer=new THREE.WebGLRenderer({canvas:mapInstance.getCanvas(),context:gl,antialias:true,alpha:true});
        this.renderer.autoClear=false;
        this.texture=new THREE.CanvasTexture(document.createElement('canvas'));
        this.material=new THREE.RawShaderMaterial({
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
-         vertexShader:`precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);vec2 ndc=((a_offset*scale)*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.6+a_effect.z))*a_effect.w:0.0;}`,
-         fragmentShader:`precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.28,v_glow));c.rgb*=1.0+v_glow*0.18;gl_FragColor=c;}`
+         vertexShader:
+           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);vec2 ndc=((a_offset*scale)*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
+         fragmentShader:
+           'precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.34,v_glow));c.rgb*=1.0+v_glow*0.22;gl_FragColor=c;}'
        });
        this.geometry=new THREE.BufferGeometry();this.mesh=new THREE.Mesh(this.geometry,this.material);this.mesh.frustumCulled=false;this.mesh.renderOrder=2;this.scene.add(this.mesh);
        this.outlineMaterial=new THREE.RawShaderMaterial({
          transparent:true,depthTest:false,depthWrite:false,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_color:{value:new THREE.Vector4(.18,.22,.27,.72)}},
-         vertexShader:`precision highp float;uniform mat4 u_matrix;attribute vec3 position;void main(){gl_Position=u_matrix*vec4(position,1.0);}`,
-         fragmentShader:`precision highp float;uniform vec4 u_color;void main(){gl_FragColor=u_color;}`
+         vertexShader:'precision highp float;uniform mat4 u_matrix;attribute vec3 position;void main(){gl_Position=u_matrix*vec4(position,1.0);}',
+         fragmentShader:'precision highp float;uniform vec4 u_color;void main(){gl_FragColor=u_color;}'
        });
        this.outlineGeometry=new THREE.BufferGeometry();this.outlineLines=new THREE.LineSegments(this.outlineGeometry,this.outlineMaterial);this.outlineLines.frustumCulled=false;this.outlineLines.renderOrder=1;this.scene.add(this.outlineLines);
        this.verticalMaterial=new THREE.RawShaderMaterial({
          transparent:true,depthTest:true,depthWrite:false,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_color:{value:new THREE.Vector4(.18,.22,.27,.58)}},
-         vertexShader:`precision highp float;uniform mat4 u_matrix;attribute vec3 position;void main(){gl_Position=u_matrix*vec4(position,1.0);}`,
-         fragmentShader:`precision highp float;uniform vec4 u_color;void main(){gl_FragColor=u_color;}`
+         vertexShader:'precision highp float;uniform mat4 u_matrix;attribute vec3 position;void main(){gl_Position=u_matrix*vec4(position,1.0);}',
+         fragmentShader:'precision highp float;uniform vec4 u_color;void main(){gl_FragColor=u_color;}'
        });
        this.verticalGeometry=new THREE.BufferGeometry();this.verticalLines=new THREE.LineSegments(this.verticalGeometry,this.verticalMaterial);this.verticalLines.frustumCulled=false;this.verticalLines.renderOrder=1;this.scene.add(this.verticalLines);
+       loadSpecialBadgeAssets().then(()=>this.rebuild());
        this.rebuild();
      },
      rebuild(){
@@ -299,35 +293,49 @@
        if(this.texture)this.texture.dispose();
        this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
-       for(const diamond of this.premiumDiamonds||[]){this.premiumGroup?.remove(diamond);disposePremiumDiamond(diamond);}
-       this.premiumDiamonds=[];
-       refreshBoothTopFeatureIndex();const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
-       this.hasAnimatedPremium=false;
-       const addQuad=(coord,height,entry,screenY=0,effect=null)=>{const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);const hw=entry.w/2,hh=entry.h/2;const fx=effect||{scale:1,pulse:0,phase:0,glow:0};const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}};
+       refreshBoothTopFeatureIndex();
+       const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
+       this.hasAnimatedBadges=false;
+       const addQuad=(coord,height,entry,screenY=0,effect=null)=>{
+         const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);
+         const hw=entry.w/2,hh=entry.h/2;
+         const fx=effect||{scale:1,pulse:0,phase:0,glow:0};
+         const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];
+         for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}
+       };
+       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.11:0.09,phase:seed,glow:kind==='awards'?0.85:0.72});
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
        for(const item of boothCatalog){
-         const booth=String(item.booth||''),entry=atlas.entries.get(`__label_${booth}`),feature=boothTopFeatureByBooth.get(booth);if(!feature||!item.coord)continue;
-         const top=boothFeatureHeight(feature);if(entry)addQuad(item.coord,top+2.4,entry,0);
+         const booth=String(item.booth||''),entry=atlas.entries.get('__label_'+booth),feature=boothTopFeatureByBooth.get(booth);if(!feature||!item.coord)continue;
+         const top=boothFeatureHeight(feature);
+         if(entry)addQuad(item.coord,top+2.4,entry,0);
          const kind=displayOptions.showSpecialBooths!==false?runtimeSpecialBooths[booth]:'';
-         const isPremium=kind==='premium';
-         const badge=!isPremium&&kind?atlas.entries.get(`__badge_${kind}`):null;
-         if(isPremium){
-           const diamond=createPremiumDiamondMesh(THREE,this.premiumDiamonds.length*.73);
-           const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(item.coord[0]),lat:Number(item.coord[1])},top+5.2);
-           diamond.position.set(mc.x,mc.y,mc.z);diamond.userData.coord=item.coord.slice();
-           this.premiumGroup.add(diamond);this.premiumDiamonds.push(diamond);this.hasAnimatedPremium=true;
-         }else if(badge)addQuad(item.coord,top+3.5,badge,entry?24:0);
+         const badge=kind?atlas.entries.get('__badge_'+kind):null;
+         if(badge){
+           const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
+           addQuad(item.coord,top+3.6,badge,entry?30:8,badgeEffectFor(kind,seed));
+           this.hasAnimatedBadges=true;
+         }
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         const programOffset=isPremium?(entry?112:82):(badge?(entry?62:38):(entry?28:0));
+         const programOffset=badge?(entry?88:64):(entry?28:0);
          if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
        }
        for(const feature of data.booths?.features||[]){
          const top=boothFeatureHeight(feature)+0.55,geometry=feature.geometry;if(!geometry)continue;
          const polygons=geometry.type==='Polygon'?[geometry.coordinates]:(geometry.type==='MultiPolygon'?geometry.coordinates:[]);
-         for(const polygon of polygons){const ring=polygon?.[0];if(!ring||ring.length<2)continue;for(let i=1;i<ring.length;i++){const prev=ring[i-1],curr=ring[i];const a=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(prev[0]),lat:Number(prev[1])},top),b=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(curr[0]),lat:Number(curr[1])},top);outlinePositions.push(a.x,a.y,a.z,b.x,b.y,b.z);const bottom=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(prev[0]),lat:Number(prev[1])},0);verticalPositions.push(bottom.x,bottom.y,bottom.z,a.x,a.y,a.z);}}
+         for(const polygon of polygons){
+           const ring=polygon?.[0];if(!ring||ring.length<2)continue;
+           for(let i=1;i<ring.length;i++){
+             const prev=ring[i-1],curr=ring[i];
+             const a=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(prev[0]),lat:Number(prev[1])},top),b=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(curr[0]),lat:Number(curr[1])},top);
+             outlinePositions.push(a.x,a.y,a.z,b.x,b.y,b.z);
+             const bottom=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(prev[0]),lat:Number(prev[1])},0);
+             verticalPositions.push(bottom.x,bottom.y,bottom.z,a.x,a.y,a.z);
+           }
+         }
        }
        this.geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
        this.geometry.setAttribute('a_offset',new THREE.Float32BufferAttribute(offsets,2));
@@ -346,27 +354,12 @@
        const canvas=this.map.getCanvas();this.material.uniforms.u_viewport.value.set(canvas.width,canvas.height);
        const zoomScale=threeLabelScaleForZoom(this.map.getZoom());
        this.material.uniforms.u_pixelScale.value=(window.devicePixelRatio||1)*zoomScale;
-       const now=performance.now()*.001;this.material.uniforms.u_time.value=now;
-       for(const diamond of this.premiumDiamonds||[]){
-         const coord=diamond.userData.coord;if(!coord)continue;
-         const targetPixels=128*(zoomScale/1.04);
-         const worldScale=mercatorUnitsPerCssPixel(this.map,coord)*targetPixels*.5;
-         const pulse=1+Math.sin(now*2.9+diamond.userData.phase)*.035;
-         diamond.scale.setScalar(worldScale*pulse);
-         diamond.rotation.z=now*1.25+diamond.userData.phase;
-         diamond.rotation.x=.18+Math.sin(now*.82+diamond.userData.phase)*.055;
-         diamond.rotation.y=.12+Math.cos(now*.67+diamond.userData.phase)*.045;
-         const shimmer=.5+.5*Math.sin(now*5.2+diamond.userData.phase);
-         if(diamond.userData.glow?.material)diamond.userData.glow.material.opacity=.08+shimmer*.16;
-         for(const material of diamond.userData.materials||[])material.opacity=.90+shimmer*.08;
-       }
+       this.material.uniforms.u_time.value=performance.now()*.001;
        this.renderer.resetState();this.renderer.render(this.scene,this.camera);
-       if(this.hasAnimatedPremium)this.map?.triggerRepaint();
+       if(this.hasAnimatedBadges)this.map?.triggerRepaint();
        if(!this.firstRendered){this.firstRendered=true;if(this.map.getLayer('booth-labels'))this.map.setLayoutProperty('booth-labels','visibility','none');setStatus('');}
      },
      onRemove(){
-       for(const diamond of this.premiumDiamonds||[])disposePremiumDiamond(diamond);
-       this.premiumDiamonds=[];
        this.geometry?.dispose();this.material?.dispose();this.texture?.dispose();this.outlineGeometry?.dispose();this.outlineMaterial?.dispose();this.verticalGeometry?.dispose();this.verticalMaterial?.dispose();this.renderer?.dispose();
      }
    };
