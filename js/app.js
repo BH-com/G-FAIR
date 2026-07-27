@@ -401,15 +401,11 @@
          const top=boothFeatureHeight(feature);
          if(entry)addQuad(item.coord,top+2.4,entry,0);
          const kind=displayOptions.showSpecialBooths!==false?runtimeSpecialBooths[booth]:'';
-         const badge=kind?atlas.entries.get('__badge_'+kind):null;
-         if(badge){
-           const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
-           addQuad(item.coord,top+3.9,badge,entry?46:20,badgeEffectFor(kind,seed));
-           this.hasAnimatedBadges=true;
-         }
+         // 특별부스 배지는 PC·모바일 공통 DOM 마커에서 렌더링합니다.
+         const hasSpecialBadge=!!kind;
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         const programOffset=badge?(entry?150:122):(entry?28:0);
+         const programOffset=hasSpecialBadge?(entry?150:122):(entry?28:0);
          if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
        }
        for(const feature of data.booths?.features||[]){
@@ -515,6 +511,61 @@ function rebuildBoothCatalog(){
      const coord=validLngLatCoord(manual)?[Number(manual[0]),Number(manual[1])]:entry.coord;
      return {...old,...props,booth,name:props.name??old.name??'',category:props.category??old.category??'',coord};
    }).sort((a,b)=>a.booth.localeCompare(b.booth,undefined,{numeric:true}));
+ }
+ function ensureSpecialMarkerStyles(){
+   if(document.getElementById('finder-special-marker-styles'))return;
+   const style=document.createElement('style');
+   style.id='finder-special-marker-styles';
+   style.textContent=`
+     .finder-special-marker{width:68px;height:68px;pointer-events:none;perspective:520px;overflow:visible;z-index:8}
+     .finder-special-marker .badge-motion{width:68px;height:68px;display:flex;align-items:center;justify-content:center;transform-origin:50% 50%;will-change:transform;transform-style:preserve-3d}
+     .finder-special-marker .badge-circle{--ring:#6e51ff;width:58px;height:58px;border-radius:50%;background:linear-gradient(180deg,#fff 0%,#faf8ff 100%);border:4px solid var(--ring);box-shadow:0 0 0 2px #fff,0 4px 12px #0004,0 0 14px color-mix(in srgb,var(--ring) 48%,transparent);display:flex;align-items:center;justify-content:center;overflow:hidden;backface-visibility:visible;transform-style:preserve-3d}
+     .finder-special-marker .badge-circle img{display:block;width:72%;height:72%;object-fit:contain;user-select:none;-webkit-user-drag:none}
+     .finder-special-marker .badge-fallback{font-size:31px;line-height:1;font-weight:900;color:var(--ring)}
+     .finder-special-marker.premium .badge-circle{--ring:#6e51ff}
+     .finder-special-marker.awards .badge-circle{--ring:#f1a719;background:linear-gradient(180deg,#fff 0%,#fff8e8 100%)}
+     .finder-special-marker.event .badge-circle{--ring:#ff8d20;background:linear-gradient(180deg,#fff 0%,#fff7ec 100%)}
+     .finder-special-marker.premium .badge-motion{animation:finderPremiumTurn 2.25s linear infinite}
+     .finder-special-marker.awards .badge-motion{animation:finderAwardsFloat 1.7s ease-in-out infinite}
+     .finder-special-marker.event .badge-motion{animation:finderEventPulse 1.1s ease-in-out infinite alternate}
+     @keyframes finderPremiumTurn{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}
+     @keyframes finderAwardsFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-8px) rotate(-4deg)}}
+     @keyframes finderEventPulse{0%{transform:scale(.94)}100%{transform:scale(1.11)}}
+     @media (prefers-reduced-motion:reduce){.finder-special-marker .badge-motion{animation-duration:4s!important}}
+   `;
+   document.head.appendChild(style);
+ }
+ function specialBadgeAssetUrl(kind){
+   const file=kind==='premium'?'premium-booth-badge.png':kind==='awards'?'awards-booth-badge.png':'event-booth-badge.png';
+   return new URL('../assets/images/'+file+'?v=20260727-dom-marker2',FINDER_APP_SCRIPT_URL).href;
+ }
+ function rebuildSpecialMarkers(){
+   ensureSpecialMarkerStyles();
+   while(specialMarkers.length){const marker=specialMarkers.pop();marker?.remove?.();}
+   if(getDisplayOptions().showSpecialBooths===false)return;
+   const runtimeSpecialBooths=getSpecialBooths();
+   for(const item of boothCatalog){
+     const kind=String(runtimeSpecialBooths[item.booth]||'').trim();
+     if(!['premium','awards','event'].includes(kind)||!validLngLatCoord(item.coord))continue;
+     const root=document.createElement('div');
+     root.className='finder-special-marker '+kind;
+     root.setAttribute('aria-hidden','true');
+     const motion=document.createElement('div');motion.className='badge-motion';
+     const circle=document.createElement('div');circle.className='badge-circle';
+     const image=document.createElement('img');
+     image.alt='';image.decoding='async';image.draggable=false;image.src=specialBadgeAssetUrl(kind);
+     image.onerror=()=>{
+       image.remove();
+       const fallback=document.createElement('span');fallback.className='badge-fallback';
+       fallback.textContent=kind==='premium'?'◇':kind==='awards'?'♛':'●';
+       circle.appendChild(fallback);
+     };
+     circle.appendChild(image);motion.appendChild(circle);root.appendChild(motion);
+     const marker=new maplibregl.Marker({element:root,anchor:'bottom',offset:[0,-34],pitchAlignment:'viewport',rotationAlignment:'viewport'})
+       .setLngLat(item.coord)
+       .addTo(map);
+     specialMarkers.push(marker);
+   }
  }
  function boothLabelGeoJSON(){return {type:'FeatureCollection',features:boothCatalog.filter(item=>validLngLatCoord(item.coord)).map((item,index)=>({type:'Feature',id:index,properties:{booth:item.booth,name:item.name||'',text:boothLabelText(item)},geometry:{type:'Point',coordinates:item.coord}}))};}
  function updateBoothLabelLayer(){
@@ -663,6 +714,7 @@ function rebuildBoothCatalog(){
  function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
  map.on('load',()=>{
    rebuildBoothCatalog();
+   rebuildSpecialMarkers();
    map.addSource('booths',{type:'geojson',data:boothDisplayGeoJSON()});
    const boothSelected=['boolean',['get','selected'],false];
    const boothHeight=['coalesce',['get','height'],80];
@@ -778,6 +830,7 @@ function rebuildBoothCatalog(){
    applyBranding();
    const openProgramBooth=activeProgramPlace?.booth||'';
    bounds=null;rebuildBoothCatalog();
+   rebuildSpecialMarkers();
    const boothSource=map.getSource('booths');if(boothSource)boothSource.setData(boothDisplayGeoJSON());
    updateBoothLabelLayer();
    rebuildThreeLabels();
