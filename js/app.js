@@ -315,12 +315,12 @@
          const badge=kind?atlas.entries.get('__badge_'+kind):null;
          if(badge){
            const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
-           addQuad(item.coord,top+3.6,badge,entry?46:20,badgeEffectFor(kind,seed));
+           addQuad(item.coord,top+3.9,badge,entry?46:20,badgeEffectFor(kind,seed));
            this.hasAnimatedBadges=true;
          }
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         const programOffset=badge?(entry?88:64):(entry?28:0);
+         const programOffset=badge?(entry?150:122):(entry?28:0);
          if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
        }
        for(const feature of data.booths?.features||[]){
