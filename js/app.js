@@ -315,7 +315,7 @@
          const badge=kind?atlas.entries.get('__badge_'+kind):null;
          if(badge){
            const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
-           addQuad(item.coord,top+3.6,badge,entry?30:8,badgeEffectFor(kind,seed));
+           addQuad(item.coord,top+3.6,badge,entry?65:32,badgeEffectFor(kind,seed));
            this.hasAnimatedBadges=true;
          }
          const programState=programBadges.get(booth);
