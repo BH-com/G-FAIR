@@ -265,7 +265,7 @@
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
          vertexShader:
-           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);vec2 ndc=((a_offset*scale)*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
+           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;attribute vec4 a_motion;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);float angle=u_time*a_motion.y;float cs=cos(angle);float sn=sin(angle);vec2 local=vec2(a_offset.x*cs-a_offset.y*sn,a_offset.x*sn+a_offset.y*cs)*scale;local.y+=a_motion.x+sin(u_time*a_motion.w+a_effect.z)*a_motion.z;vec2 ndc=(local*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
          fragmentShader:
            'precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.34,v_glow));c.rgb*=1.0+v_glow*0.22;gl_FragColor=c;}'
        });
@@ -294,16 +294,32 @@
        this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
        refreshBoothTopFeatureIndex();
-       const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
+       const positions=[],offsets=[],uvs=[],effects=[],motions=[],outlinePositions=[],verticalPositions=[];
        this.hasAnimatedBadges=false;
        const addQuad=(coord,height,entry,screenY=0,effect=null)=>{
          const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);
          const hw=entry.w/2,hh=entry.h/2;
-         const fx=effect||{scale:1,pulse:0,phase:0,glow:0};
-         const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];
-         for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}
+         const fx=effect||{scale:1,pulse:0,phase:0,glow:0,spin:0,bob:0,bobSpeed:0};
+         // 회전은 배지 중심을 기준으로 하고, screenY는 회전 후 화면 위쪽 이동값으로 적용합니다.
+         const q=[[-hw,-hh,entry.u0,entry.v0],[hw,-hh,entry.u1,entry.v0],[hw,hh,entry.u1,entry.v1],[-hw,-hh,entry.u0,entry.v0],[hw,hh,entry.u1,entry.v1],[-hw,hh,entry.u0,entry.v1]];
+         for(const v of q){
+           positions.push(mc.x,mc.y,mc.z);
+           offsets.push(v[0],v[1]);
+           uvs.push(v[2],v[3]);
+           effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);
+           motions.push(screenY,fx.spin||0,fx.bob||0,fx.bobSpeed||0);
+         }
        };
-       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.18:0.16,phase:seed,glow:kind==='awards'?1.45:1.35});
+       const badgeEffectFor=(kind,seed=0)=>({
+         scale:1,
+         pulse:kind==='event'?0.18:0.16,
+         phase:seed,
+         glow:kind==='awards'?1.45:1.35,
+         // 프리미엄은 천천히 한 바퀴 회전, 어워즈는 부드럽게 부유, 이벤트는 조금 더 크게 통통 움직입니다.
+         spin:kind==='premium'?1.35:0,
+         bob:kind==='premium'?4:(kind==='awards'?8:11),
+         bobSpeed:kind==='premium'?2.0:(kind==='awards'?2.4:3.4)
+       });
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
@@ -341,6 +357,7 @@
        this.geometry.setAttribute('a_offset',new THREE.Float32BufferAttribute(offsets,2));
        this.geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
        this.geometry.setAttribute('a_effect',new THREE.Float32BufferAttribute(effects,4));
+       this.geometry.setAttribute('a_motion',new THREE.Float32BufferAttribute(motions,4));
        this.geometry.setDrawRange(0,positions.length/3);this.geometry.computeBoundingSphere();
        this.outlineGeometry.setAttribute('position',new THREE.Float32BufferAttribute(outlinePositions,3));this.outlineGeometry.setDrawRange(0,outlinePositions.length/3);this.outlineGeometry.computeBoundingSphere();
        this.verticalGeometry.setAttribute('position',new THREE.Float32BufferAttribute(verticalPositions,3));this.verticalGeometry.setDrawRange(0,verticalPositions.length/3);this.verticalGeometry.computeBoundingSphere();
