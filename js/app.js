@@ -180,14 +180,15 @@
  }
  function specialBadgeScaleForZoom(zoom){
    const z=Number(zoom)||0;
-   // 축소 상태에서는 배지가 부스보다 과도하게 커 보이지 않도록 추가 축소합니다.
-   if(z<=12.8)return 0.70;
+   // 전체보기에서는 배지가 최소 약 40px 수준으로 보이도록 크게 유지하고,
+   // 확대될수록 부스/라벨 크기 증가에 맞춰 자연스럽게 추가 확대합니다.
+   if(z<=12.8)return 1.65;
    if(z<15.4){
      const t=Math.max(0,Math.min(1,(z-12.8)/(15.4-12.8)));
      const eased=t*t*(3-2*t);
-     return 0.70+(0.84-0.70)*eased;
+     return 1.65+(0.98-1.65)*eased;
    }
-   return 0.84;
+   return 0.98;
  }
  function makeThreeLabelAtlas(){
    const canvas=document.createElement('canvas');canvas.width=4096;canvas.height=2048;
@@ -470,7 +471,7 @@
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
          if(programBadge){
-           const programOffset=badge?(entry?166:136):(entry?28:0);
+           const programOffset=badge?(entry?194:160):(entry?28:0);
            pendingPrograms.push({item,top,programBadge,programOffset});
          }
        }
@@ -486,7 +487,7 @@
            pending.item.coord,
            pending.top+4.2,
            pending.badge,
-           pending.entry?60:28,
+           pending.entry?72:34,
            badgeEffectFor(pending.kind,pending.seed)
          );
          this.hasAnimatedBadges=true;
