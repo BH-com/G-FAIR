@@ -354,7 +354,7 @@
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
          vertexShader:
-           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float animated=a_effect.y!=0.0?1.0:0.0;float pulse=animated>0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);float bob=animated>0.0?sin(u_time*2.0+a_effect.z)*6.0:0.0;vec2 localOffset=vec2(a_offset.x*scale,(a_offset.y+bob)*scale);vec2 ndc=(localOffset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
+           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;attribute float a_motion;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float scale=max(0.05,a_effect.x);float xTurn=1.0;float yShift=0.0;if(a_motion>0.5&&a_motion<1.5){float angle=u_time*2.65+a_effect.z;xTurn=cos(angle);scale*=0.98+0.02*abs(cos(angle));}else if(a_motion>1.5&&a_motion<2.5){yShift=sin(u_time*2.35+a_effect.z)*7.0;}else if(a_motion>2.5&&a_motion<3.5){scale*=1.0+sin(u_time*3.25+a_effect.z)*0.11;}vec2 localOffset=vec2(a_offset.x*xTurn*scale,a_offset.y*scale+yShift);vec2 ndc=(localOffset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;float shimmer=0.5+0.5*sin(u_time*7.2+a_effect.z);v_glow=a_effect.w*shimmer;}',
          fragmentShader:
            'precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.34,v_glow));c.rgb*=1.0+v_glow*0.22;gl_FragColor=c;}'
        });
@@ -383,16 +383,16 @@
        this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
        refreshBoothTopFeatureIndex();
-       const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
+       const positions=[],offsets=[],uvs=[],effects=[],motions=[],outlinePositions=[],verticalPositions=[];
        this.hasAnimatedBadges=false;
        const addQuad=(coord,height,entry,screenY=0,effect=null)=>{
          const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);
          const hw=entry.w/2,hh=entry.h/2;
-         const fx=effect||{scale:1,pulse:0,phase:0,glow:0};
+         const fx=effect||{scale:1,phase:0,glow:0,motion:0};
          const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];
-         for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}
+         for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,0,fx.phase||0,fx.glow||0);motions.push(fx.motion||0);}
        };
-       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.14:(kind==='premium'?0.11:0.12),phase:seed,glow:kind==='awards'?1.6:(kind==='event'?1.48:1.55)});
+       const badgeEffectFor=(kind,seed=0)=>({scale:1,phase:seed,glow:kind==='premium'?0.48:(kind==='awards'?0.42:0.36),motion:kind==='premium'?1:(kind==='awards'?2:3)});
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
@@ -401,11 +401,15 @@
          const top=boothFeatureHeight(feature);
          if(entry)addQuad(item.coord,top+2.4,entry,0);
          const kind=displayOptions.showSpecialBooths!==false?runtimeSpecialBooths[booth]:'';
-         // 특별부스 배지는 PC·모바일 공통 DOM 마커에서 렌더링합니다.
-         const hasSpecialBadge=!!kind;
+         const badge=kind?atlas.entries.get('__badge_'+kind):null;
+         if(badge){
+           const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
+           addQuad(item.coord,top+3.9,badge,entry?46:20,badgeEffectFor(kind,seed));
+           this.hasAnimatedBadges=true;
+         }
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         const programOffset=hasSpecialBadge?(entry?150:122):(entry?28:0);
+         const programOffset=badge?(entry?150:122):(entry?28:0);
          if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
        }
        for(const feature of data.booths?.features||[]){
@@ -426,6 +430,7 @@
        this.geometry.setAttribute('a_offset',new THREE.Float32BufferAttribute(offsets,2));
        this.geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
        this.geometry.setAttribute('a_effect',new THREE.Float32BufferAttribute(effects,4));
+       this.geometry.setAttribute('a_motion',new THREE.Float32BufferAttribute(motions,1));
        this.geometry.setDrawRange(0,positions.length/3);this.geometry.computeBoundingSphere();
        this.outlineGeometry.setAttribute('position',new THREE.Float32BufferAttribute(outlinePositions,3));this.outlineGeometry.setDrawRange(0,outlinePositions.length/3);this.outlineGeometry.computeBoundingSphere();
        this.verticalGeometry.setAttribute('position',new THREE.Float32BufferAttribute(verticalPositions,3));this.verticalGeometry.setDrawRange(0,verticalPositions.length/3);this.verticalGeometry.computeBoundingSphere();
@@ -511,96 +516,6 @@ function rebuildBoothCatalog(){
      const coord=validLngLatCoord(manual)?[Number(manual[0]),Number(manual[1])]:entry.coord;
      return {...old,...props,booth,name:props.name??old.name??'',category:props.category??old.category??'',coord};
    }).sort((a,b)=>a.booth.localeCompare(b.booth,undefined,{numeric:true}));
- }
- function ensureSpecialMarkerStyles(){
-   if(document.getElementById('finder-special-marker-styles'))return;
-   const style=document.createElement('style');
-   style.id='finder-special-marker-styles';
-   style.textContent=`
-     .finder-special-marker{width:68px;height:68px;pointer-events:none;perspective:520px;overflow:visible;z-index:8}
-     .finder-special-marker .badge-scale{width:68px;height:68px;display:flex;align-items:center;justify-content:center;transform:scale(var(--finder-badge-scale,1));transform-origin:50% 50%;will-change:transform}
-     .finder-special-marker .badge-motion{width:68px;height:68px;display:flex;align-items:center;justify-content:center;transform-origin:50% 50%;will-change:transform;transform-style:preserve-3d}
-     .finder-special-marker .badge-circle{--ring:#6e51ff;width:58px;height:58px;border-radius:50%;background:linear-gradient(180deg,#fff 0%,#faf8ff 100%);border:4px solid var(--ring);box-shadow:0 0 0 2px #fff,0 4px 12px #0004,0 0 14px color-mix(in srgb,var(--ring) 48%,transparent);display:flex;align-items:center;justify-content:center;overflow:hidden;backface-visibility:visible;transform-style:preserve-3d}
-     .finder-special-marker .badge-circle img{display:block;width:72%;height:72%;object-fit:contain;user-select:none;-webkit-user-drag:none}
-     .finder-special-marker .badge-fallback{font-size:31px;line-height:1;font-weight:900;color:var(--ring)}
-     .finder-special-marker.premium .badge-circle{--ring:#6e51ff}
-     .finder-special-marker.awards .badge-circle{--ring:#f1a719;background:linear-gradient(180deg,#fff 0%,#fff8e8 100%)}
-     .finder-special-marker.event .badge-circle{--ring:#ff8d20;background:linear-gradient(180deg,#fff 0%,#fff7ec 100%)}
-     .finder-special-marker.premium .badge-motion{animation:finderPremiumTurn 2.25s linear infinite}
-     .finder-special-marker.awards .badge-motion{animation:finderAwardsFloat 1.7s ease-in-out infinite}
-     .finder-special-marker.event .badge-motion{animation:finderEventPulse 1.1s ease-in-out infinite alternate}
-     @keyframes finderPremiumTurn{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}
-     @keyframes finderAwardsFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-8px) rotate(-4deg)}}
-     @keyframes finderEventPulse{0%{transform:scale(.94)}100%{transform:scale(1.11)}}
-     @media (prefers-reduced-motion:reduce){.finder-special-marker .badge-motion{animation-duration:4s!important}}
-   `;
-   document.head.appendChild(style);
- }
- function specialBadgeAssetUrl(kind){
-   const file=kind==='premium'?'premium-booth-badge.png':kind==='awards'?'awards-booth-badge.png':'event-booth-badge.png';
-   return new URL('../assets/images/'+file+'?v=20260727-dom-marker2',FINDER_APP_SCRIPT_URL).href;
- }
- function specialBadgeScaleForZoom(zoom){
-   const relative=threeLabelScaleForZoom(zoom)/1.04;
-   return Math.max(.40,Math.min(1,relative));
- }
- function specialBadgeOffsetFor(item,scale){
-   const lines=boothLabelLines(item);
-   const labelSpace=lines.length>1?25:17;
-   const badgeRadius=34;
-   const gap=7;
-   return (labelSpace+badgeRadius+gap)*scale;
- }
- function updateSpecialMarkerLayout(){
-   if(!specialMarkers.length)return;
-   const scale=specialBadgeScaleForZoom(map.getZoom());
-   for(const entry of specialMarkers){
-     entry.root?.style.setProperty('--finder-badge-scale',String(scale));
-     const offsetY=-specialBadgeOffsetFor(entry.item,scale);
-     entry.marker?.setOffset?.([0,offsetY]);
-   }
- }
- function rebuildSpecialMarkers(){
-   ensureSpecialMarkerStyles();
-   while(specialMarkers.length){
-     const entry=specialMarkers.pop();
-     (entry?.marker||entry)?.remove?.();
-   }
-   if(getDisplayOptions().showSpecialBooths===false)return;
-   refreshBoothTopFeatureIndex();
-   const runtimeSpecialBooths=getSpecialBooths();
-   for(const item of boothCatalog){
-     const kind=String(runtimeSpecialBooths[item.booth]||'').trim();
-     if(!['premium','awards','event'].includes(kind)||!validLngLatCoord(item.coord))continue;
-     const root=document.createElement('div');
-     root.className='finder-special-marker '+kind;
-     root.setAttribute('aria-hidden','true');
-     const scaleLayer=document.createElement('div');scaleLayer.className='badge-scale';
-     const motion=document.createElement('div');motion.className='badge-motion';
-     const circle=document.createElement('div');circle.className='badge-circle';
-     const image=document.createElement('img');
-     image.alt='';image.decoding='async';image.draggable=false;image.src=specialBadgeAssetUrl(kind);
-     image.onerror=()=>{
-       image.remove();
-       const fallback=document.createElement('span');fallback.className='badge-fallback';
-       fallback.textContent=kind==='premium'?'◇':kind==='awards'?'♛':'●';
-       circle.appendChild(fallback);
-     };
-     circle.appendChild(image);motion.appendChild(circle);scaleLayer.appendChild(motion);root.appendChild(scaleLayer);
-     const feature=boothTopFeatureByBooth.get(String(item.booth));
-     const labelAltitude=boothFeatureHeight(feature)+2.4;
-     const marker=new maplibregl.Marker({
-       element:root,
-       anchor:'center',
-       offset:[0,0],
-       altitude:labelAltitude,
-       pitchAlignment:'viewport',
-       rotationAlignment:'viewport'
-     }).setLngLat(item.coord).addTo(map);
-     if(typeof marker.setAltitude==='function')marker.setAltitude(labelAltitude);
-     specialMarkers.push({marker,root,item,kind,labelAltitude});
-   }
-   updateSpecialMarkerLayout();
  }
  function boothLabelGeoJSON(){return {type:'FeatureCollection',features:boothCatalog.filter(item=>validLngLatCoord(item.coord)).map((item,index)=>({type:'Feature',id:index,properties:{booth:item.booth,name:item.name||'',text:boothLabelText(item)},geometry:{type:'Point',coordinates:item.coord}}))};}
  function updateBoothLabelLayer(){
@@ -749,7 +664,6 @@ function rebuildBoothCatalog(){
  function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
  map.on('load',()=>{
    rebuildBoothCatalog();
-   rebuildSpecialMarkers();
    map.addSource('booths',{type:'geojson',data:boothDisplayGeoJSON()});
    const boothSelected=['boolean',['get','selected'],false];
    const boothHeight=['coalesce',['get','height'],80];
@@ -812,7 +726,7 @@ function rebuildBoothCatalog(){
    }});
    const locations=rebuildLocationControls();const destSelect=document.getElementById('destSelect');destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');fit();updateLabelDetail();setStatus('');
  });
- map.on('zoom',()=>{updateLabelDetail();updateSpecialMarkerLayout();});
+ map.on('zoom',updateLabelDetail);
  map.on('click','booth-extrusion',e=>{const f=e.features&&e.features[0];if(!f)return;const item=boothCatalog.find(x=>x.booth===f.properties.booth)||{booth:f.properties.booth,name:f.properties.name,category:f.properties.category,coord:[e.lngLat.lng,e.lngLat.lat]};openSelection(item,f.id,[e.lngLat.lng,e.lngLat.lat]);});
  map.on('click',e=>{if(!map.queryRenderedFeatures(e.point,{layers:['booth-extrusion']}).length)results.classList.remove('open');});
  map.on('mouseenter','booth-extrusion',()=>map.getCanvas().style.cursor='pointer'); map.on('mouseleave','booth-extrusion',()=>map.getCanvas().style.cursor='');
@@ -865,7 +779,6 @@ function rebuildBoothCatalog(){
    applyBranding();
    const openProgramBooth=activeProgramPlace?.booth||'';
    bounds=null;rebuildBoothCatalog();
-   rebuildSpecialMarkers();
    const boothSource=map.getSource('booths');if(boothSource)boothSource.setData(boothDisplayGeoJSON());
    updateBoothLabelLayer();
    rebuildThreeLabels();
