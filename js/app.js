@@ -140,9 +140,9 @@
    return threeLoadPromise;
  }
  const SPECIAL_BADGE_ASSET_URLS={
-   premium:'../assets/images/premium-booth-badge.png',
-   awards:'../assets/images/awards-booth-badge.png',
-   event:'../assets/images/event-booth-badge.png'
+   premium:'../assets/images/premium-booth-badge.png?v=20260727-badge-front2',
+   awards:'../assets/images/awards-booth-badge.png?v=20260727-badge-front2',
+   event:'../assets/images/event-booth-badge.png?v=20260727-badge-front2'
  };
  let specialBadgeAssetsPromise=null,specialBadgeAssets=null;
  function loadBadgeImage(src){
@@ -157,12 +157,13 @@
  function loadSpecialBadgeAssets(){
    if(specialBadgeAssets)return Promise.resolve(specialBadgeAssets);
    if(specialBadgeAssetsPromise)return specialBadgeAssetsPromise;
-   specialBadgeAssetsPromise=Promise.all(Object.entries(SPECIAL_BADGE_ASSET_URLS).map(([kind,src])=>loadBadgeImage(src).then(image=>[kind,image]))).then(items=>{
-     specialBadgeAssets=Object.fromEntries(items);
-     return specialBadgeAssets;
-   }).catch(error=>{
-     console.warn(error);
-     specialBadgeAssets={};
+   specialBadgeAssetsPromise=Promise.allSettled(Object.entries(SPECIAL_BADGE_ASSET_URLS).map(([kind,src])=>loadBadgeImage(src).then(image=>[kind,image]))).then(results=>{
+     const loaded={};
+     for(const result of results){
+       if(result.status==='fulfilled')loaded[result.value[0]]=result.value[1];
+       else console.warn(result.reason);
+     }
+     specialBadgeAssets=loaded;
      return specialBadgeAssets;
    });
    return specialBadgeAssetsPromise;
@@ -176,6 +177,17 @@
      return 0.22+(0.90-0.22)*eased;
    }
    return 1.04;
+ }
+ function specialBadgeScaleForZoom(zoom){
+   const z=Number(zoom)||0;
+   // 축소 상태에서는 배지가 부스보다 과도하게 커 보이지 않도록 추가 축소합니다.
+   if(z<=12.8)return 0.70;
+   if(z<15.4){
+     const t=Math.max(0,Math.min(1,(z-12.8)/(15.4-12.8)));
+     const eased=t*t*(3-2*t);
+     return 0.70+(0.84-0.70)*eased;
+   }
+   return 0.84;
  }
  function makeThreeLabelAtlas(){
    const canvas=document.createElement('canvas');canvas.width=4096;canvas.height=2048;
@@ -352,9 +364,9 @@
        this.texture=new THREE.CanvasTexture(document.createElement('canvas'));
        this.material=new THREE.RawShaderMaterial({
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
-         uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
+         uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_badgeScale:{value:1},u_time:{value:0}},
          vertexShader:
-           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;attribute float a_motion;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float scale=max(0.05,a_effect.x);float xTurn=1.0;float yShift=0.0;if(a_motion>0.5&&a_motion<1.5){float angle=u_time*2.65+a_effect.z;xTurn=cos(angle);scale*=0.98+0.02*abs(cos(angle));}else if(a_motion>1.5&&a_motion<2.5){yShift=sin(u_time*2.35+a_effect.z)*7.0;}else if(a_motion>2.5&&a_motion<3.5){scale*=1.0+sin(u_time*3.25+a_effect.z)*0.11;}vec2 localOffset=vec2(a_offset.x*xTurn*scale,a_offset.y*scale+yShift);vec2 ndc=(localOffset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;float shimmer=0.5+0.5*sin(u_time*7.2+a_effect.z);v_glow=a_effect.w*shimmer;}',
+           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_badgeScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;attribute float a_motion;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float isBadge=step(0.5,a_motion);float scale=max(0.05,a_effect.x)*mix(1.0,u_badgeScale,isBadge);float xTurn=1.0;float yShift=0.0;if(a_motion>0.5&&a_motion<1.5){float angle=u_time*2.65+a_effect.z;xTurn=cos(angle);scale*=0.98+0.02*abs(cos(angle));}else if(a_motion>1.5&&a_motion<2.5){yShift=sin(u_time*2.35+a_effect.z)*7.0*u_badgeScale;}else if(a_motion>2.5&&a_motion<3.5){scale*=1.0+sin(u_time*3.25+a_effect.z)*0.11;}vec2 localOffset=vec2(a_offset.x*xTurn*scale,a_offset.y*scale+yShift);vec2 ndc=(localOffset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;float shimmer=0.5+0.5*sin(u_time*7.2+a_effect.z);v_glow=a_effect.w*shimmer;}',
          fragmentShader:
            'precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.34,v_glow));c.rgb*=1.0+v_glow*0.22;gl_FragColor=c;}'
        });
@@ -380,7 +392,7 @@
        if(!this.THREE||!this.geometry)return;
        const THREE=this.THREE,atlas=makeThreeLabelAtlas();
        if(this.texture)this.texture.dispose();
-       this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
+       this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.generateMipmaps=false;this.texture.premultiplyAlpha=false;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
        refreshBoothTopFeatureIndex();
        const positions=[],offsets=[],uvs=[],effects=[],motions=[],outlinePositions=[],verticalPositions=[];
@@ -396,21 +408,45 @@
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
+       const pendingPrograms=[];
+       const pendingBadges=[];
+
+       // 1차: 모든 부스번호/회사명을 먼저 그립니다.
        for(const item of boothCatalog){
          const booth=String(item.booth||''),entry=atlas.entries.get('__label_'+booth),feature=boothTopFeatureByBooth.get(booth);if(!feature||!item.coord)continue;
          const top=boothFeatureHeight(feature);
          if(entry)addQuad(item.coord,top+2.4,entry,0);
+
          const kind=displayOptions.showSpecialBooths!==false?runtimeSpecialBooths[booth]:'';
          const badge=kind?atlas.entries.get('__badge_'+kind):null;
          if(badge){
            const seed=((item.coord?.[0]||0)*37+(item.coord?.[1]||0)*61+booth.length)%6.283;
-           addQuad(item.coord,top+3.9,badge,entry?46:20,badgeEffectFor(kind,seed));
-           this.hasAnimatedBadges=true;
+           pendingBadges.push({item,entry,top,kind,badge,seed});
          }
+
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
-         const programOffset=badge?(entry?150:122):(entry?28:0);
-         if(programBadge)addQuad(item.coord,top+4.5,programBadge,programOffset);
+         if(programBadge){
+           const programOffset=badge?(entry?166:136):(entry?28:0);
+           pendingPrograms.push({item,top,programBadge,programOffset});
+         }
+       }
+
+       // 2차: 프로그램 표시를 그립니다.
+       for(const pending of pendingPrograms){
+         addQuad(pending.item.coord,pending.top+4.5,pending.programBadge,pending.programOffset);
+       }
+
+       // 3차: 특별부스 배지를 가장 마지막에 그려 부스번호와 다른 배지보다 항상 앞에 보이게 합니다.
+       for(const pending of pendingBadges){
+         addQuad(
+           pending.item.coord,
+           pending.top+4.2,
+           pending.badge,
+           pending.entry?60:28,
+           badgeEffectFor(pending.kind,pending.seed)
+         );
+         this.hasAnimatedBadges=true;
        }
        for(const feature of data.booths?.features||[]){
          const top=boothFeatureHeight(feature)+0.55,geometry=feature.geometry;if(!geometry)continue;
@@ -442,10 +478,17 @@
        this.camera.matrixWorld.identity();this.camera.matrixWorldInverse.identity();
        this.material.uniforms.u_matrix.value.fromArray(matrix);this.outlineMaterial.uniforms.u_matrix.value.fromArray(matrix);this.verticalMaterial.uniforms.u_matrix.value.fromArray(matrix);
        const canvas=this.map.getCanvas();this.material.uniforms.u_viewport.value.set(canvas.width,canvas.height);
-       const zoomScale=threeLabelScaleForZoom(this.map.getZoom());
+       const zoom=this.map.getZoom();
+       const zoomScale=threeLabelScaleForZoom(zoom);
        this.material.uniforms.u_pixelScale.value=(window.devicePixelRatio||1)*zoomScale;
+       this.material.uniforms.u_badgeScale.value=specialBadgeScaleForZoom(zoom);
        this.material.uniforms.u_time.value=performance.now()*.001;
-       this.renderer.resetState();this.renderer.render(this.scene,this.camera);
+       this.renderer.resetState();
+       gl.disable(gl.DEPTH_TEST);
+       gl.depthMask(false);
+       gl.disable(gl.CULL_FACE);
+       this.renderer.render(this.scene,this.camera);
+       gl.depthMask(true);
        if(this.hasAnimatedBadges)this.map?.triggerRepaint();
        if(!this.firstRendered){this.firstRendered=true;if(this.map.getLayer('booth-labels'))this.map.setLayoutProperty('booth-labels','visibility','none');setStatus('');}
      },
