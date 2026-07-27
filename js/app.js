@@ -750,9 +750,67 @@ function rebuildBoothCatalog(){
  function startRouteAnimation(){if(routeAnimationFrame)cancelAnimationFrame(routeAnimationFrame);routeAnimationStarted=performance.now();const animate=now=>{if(!activeRoute||!activeRouteCoords.length||!map.getSource('route-particles')){routeAnimationFrame=0;return;}const phase=((now-routeAnimationStarted)/4200)%1;const features=[];const particleCount=5;for(let i=0;i<particleCount;i++){const progress=(phase+i/particleCount)%1;features.push({type:'Feature',properties:{index:i,opacity:1-i*0.1},geometry:{type:'Point',coordinates:pointAlongRoute(activeRouteCoords,progress)}});}map.getSource('route-particles').setData({type:'FeatureCollection',features});routeAnimationFrame=requestAnimationFrame(animate);};routeAnimationFrame=requestAnimationFrame(animate);}
 
  function setStatus(text){status.textContent=text;}
+ function setBoothSheetExpanded(expanded,{scrollTop=false}={}){
+   if(!panel)return;
+   const next=!!expanded;
+   panel.classList.toggle('sheet-expanded',next);
+   panel.style.removeProperty('--sheet-drag-y');
+   panel.classList.remove('sheet-dragging');
+   const grabber=document.getElementById('panelGrabber');
+   if(grabber){
+     grabber.setAttribute('aria-expanded',next?'true':'false');
+     grabber.setAttribute('aria-label',next?'부스 설명 패널 닫기 또는 축소하기':'부스 설명 패널 펼치기 또는 닫기');
+   }
+   if(scrollTop){const detail=panel.querySelector('.detail-grid');if(detail)detail.scrollTop=0;}
+ }
+ function resetBoothSheet(){setBoothSheetExpanded(false,{scrollTop:true});}
+ function setupBoothSheetGesture(){
+   const grabber=document.getElementById('panelGrabber');if(!grabber||!panel)return;
+   let tracking=false,startY=0,lastY=0,startTime=0,lastTime=0,startExpanded=false,pointerId=null,didDrag=false,suppressClick=false;
+   const finish=(event,cancelled=false)=>{
+     if(!tracking)return;
+     const y=Number(event?.clientY??lastY),delta=y-startY,elapsed=Math.max(1,Number(event?.timeStamp||performance.now())-startTime),velocity=delta/elapsed;
+     tracking=false;suppressClick=didDrag;panel.classList.remove('sheet-dragging');panel.style.removeProperty('--sheet-drag-y');
+     if(pointerId!=null&&grabber.hasPointerCapture?.(pointerId)){try{grabber.releasePointerCapture(pointerId)}catch(_){}}
+     pointerId=null;
+     if(cancelled){setBoothSheetExpanded(startExpanded);return;}
+     if(delta>82||velocity>.58){clearSelected();return;}
+     if(delta<-48||velocity<-.42){setBoothSheetExpanded(true);return;}
+     setBoothSheetExpanded(startExpanded);
+   };
+   grabber.addEventListener('pointerdown',event=>{
+     if(!isMobileLayout()||!panel.classList.contains('open'))return;
+     if(event.pointerType==='mouse'&&event.button!==0)return;
+     tracking=true;didDrag=false;suppressClick=false;pointerId=event.pointerId;startY=lastY=event.clientY;startTime=lastTime=event.timeStamp||performance.now();startExpanded=panel.classList.contains('sheet-expanded');
+     panel.classList.add('sheet-dragging');grabber.setPointerCapture?.(pointerId);event.preventDefault();
+   });
+   grabber.addEventListener('pointermove',event=>{
+     if(!tracking||event.pointerId!==pointerId)return;
+     lastY=event.clientY;lastTime=event.timeStamp||performance.now();
+     const delta=lastY-startY;if(Math.abs(delta)>5)didDrag=true;
+     // Upward drag previews expansion; downward drag follows the finger toward dismissal.
+     const translated=delta>0?delta:Math.max(-72,delta*.34);
+     panel.style.setProperty('--sheet-drag-y',`${translated}px`);event.preventDefault();
+   });
+   grabber.addEventListener('pointerup',event=>finish(event,false));
+   grabber.addEventListener('pointercancel',event=>finish(event,true));
+   grabber.addEventListener('keydown',event=>{
+     if(event.key==='ArrowUp'||event.key==='Enter'||event.key===' '){event.preventDefault();setBoothSheetExpanded(true);}
+     else if(event.key==='ArrowDown'){event.preventDefault();clearSelected();}
+   });
+   grabber.addEventListener('click',event=>{
+     if(!isMobileLayout()||!panel.classList.contains('open'))return;
+     if(suppressClick){suppressClick=false;event.preventDefault();return;}
+     event.preventDefault();setBoothSheetExpanded(!panel.classList.contains('sheet-expanded'));
+   });
+ }
+ function syncMobileViewportHeight(){
+   const height=Math.round(window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight||0);
+   if(height>0)document.documentElement.style.setProperty('--app-vh',`${height}px`);
+ }
  function refreshSelectedBoothColor(){const source=map.getSource('booths');if(source)source.setData(boothDisplayGeoJSON());}
- function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');refreshSelectedBoothColor();rebuildThreeLabels();}
- function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();}
+ function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');refreshSelectedBoothColor();rebuildThreeLabels();}
+ function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');resetBoothSheet();panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();}
  function findFeatureId(booth){const index=(data.booths?.features||[]).findIndex(feature=>String(feature.properties?.booth||'')===String(booth||''));if(index<0)return null;const feature=data.booths.features[index];return feature.id??feature.properties?._editId??index;}
  function selectLabel(item,fly=true){const id=findFeatureId(item.booth);openSelection(item,id,item.coord);if(fly)map.easeTo({center:item.coord,zoom:15.55,pitch:48,bearing:map.getBearing(),duration:650});}
  function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
@@ -861,6 +919,9 @@ function rebuildBoothCatalog(){
    if(isMobileLayout())setMobileMode(mobileMode,{closeModal:false});
    else{delete document.body.dataset.mobileMode;requestAnimationFrame(()=>map.resize());}
  });
+ syncMobileViewportHeight();setupBoothSheetGesture();
+ window.visualViewport?.addEventListener('resize',()=>{syncMobileViewportHeight();requestAnimationFrame(()=>map.resize());});
+ window.addEventListener('orientationchange',()=>setTimeout(()=>{syncMobileViewportHeight();map.resize();},80));
  if(isMobileLayout())setMobileMode('map',{closeModal:false});
  document.getElementById('flatBtn').onclick=()=>map.easeTo({pitch:0,bearing:0,duration:550});document.getElementById('threeBtn').onclick=()=>map.easeTo({pitch:52,bearing:-28,duration:550});document.getElementById('resetBtn').onclick=()=>{clearSelected();fit();};
  document.getElementById('panelClose').onclick=clearSelected;const panelClearBtn=document.getElementById('panelClear');if(panelClearBtn)panelClearBtn.onclick=clearSelected;const panelFocusBtn=document.getElementById('panelFocus');if(panelFocusBtn)panelFocusBtn.onclick=()=>{if(selectedLabel?.coord)map.easeTo({center:selectedLabel.coord,zoom:18,pitch:52,bearing:map.getBearing(),duration:550});};
@@ -886,7 +947,7 @@ function rebuildBoothCatalog(){
  }
  window.addEventListener('storage',event=>{if(!event.key||!event.key.startsWith('finder.maplibre.project.'))return;window.FINDER_PROJECT_STORE.apply(window.FINDER_PROJECT_STORE.load());refreshFromProjectStore();});
  window.addEventListener('finder-project-live-update',()=>refreshFromProjectStore());
- window.addEventListener('resize',()=>map.resize());
+ window.addEventListener('resize',()=>{syncMobileViewportHeight();map.resize();});
  const content=window.FINDER_CONTENT||{companyDetails:{},stages:[],documents:[]};
  function getProgramNow(){return programTestNow?new Date(programTestNow.getTime()):new Date()}
  function localDateText(date=getProgramNow()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
