@@ -230,25 +230,114 @@
      }
      ctx.restore();
    }
-   function addImageEntry(key,image,kind){
-     if(entries.has(key)||!image)return;
-     const frameW=144,frameH=144,pad=10;
-     const slot=reserve(frameW+pad*2,frameH+pad*2);if(!slot)return;
-     const boxX=slot.x+pad,boxY=slot.y+pad,boxW=frameW,boxH=frameH;
-     const ratio=(image.width||1)/(image.height||1);
-     const maxW=boxW*.84,maxH=boxH*.84;
-     let drawW=maxW,drawH=maxW/ratio;
-     if(drawH>maxH){drawH=maxH;drawW=drawH*ratio;}
-     const drawX=boxX+(boxW-drawW)/2,drawY=boxY+(boxH-drawH)/2;
-     const sparkleColor=kind==='awards'?'rgba(255,214,102,.95)':(kind==='event'?'rgba(255,236,120,.95)':'rgba(154,226,255,.95)');
-     drawSparkles(boxX,boxY,boxW,boxH,sparkleColor,kind==='awards'?'awards':(kind==='event'?'event':'default'));
-     ctx.drawImage(image,drawX,drawY,drawW,drawH);
+   function drawBadgeFallbackIcon(kind,cx,cy,size){
+     ctx.save();
+     ctx.translate(cx,cy);
+     ctx.lineJoin='round';
+     ctx.lineCap='round';
+     if(kind==='premium'){
+       const w=size*.78,h=size*.74;
+       ctx.beginPath();
+       ctx.moveTo(0,-h*.52);
+       ctx.lineTo(w*.44,-h*.18);
+       ctx.lineTo(w*.28,h*.02);
+       ctx.lineTo(0,h*.52);
+       ctx.lineTo(-w*.28,h*.02);
+       ctx.lineTo(-w*.44,-h*.18);
+       ctx.closePath();
+       const grad=ctx.createLinearGradient(0,-h*.52,0,h*.52);
+       grad.addColorStop(0,'#dff8ff');
+       grad.addColorStop(.28,'#b9b7ff');
+       grad.addColorStop(.7,'#8d7cff');
+       grad.addColorStop(1,'#6a4ffb');
+       ctx.fillStyle=grad;
+       ctx.fill();
+       ctx.strokeStyle='#6f5cf7';
+       ctx.lineWidth=Math.max(3,size*.045);
+       ctx.stroke();
+     }else if(kind==='awards'){
+       const w=size*.74,h=size*.62;
+       ctx.fillStyle='#f4b325';
+       ctx.strokeStyle='#cc8516';
+       ctx.lineWidth=Math.max(3,size*.04);
+       ctx.beginPath();
+       ctx.moveTo(-w*.44,h*.36);
+       ctx.lineTo(-w*.32,-h*.08);
+       ctx.quadraticCurveTo(-w*.22,-h*.45,-w*.08,-h*.08);
+       ctx.lineTo(0,-h*.48);
+       ctx.lineTo(w*.08,-h*.08);
+       ctx.quadraticCurveTo(w*.22,-h*.45,w*.32,-h*.08);
+       ctx.lineTo(w*.44,h*.36);
+       ctx.closePath();
+       ctx.fill();
+       ctx.stroke();
+       ctx.fillRect(-w*.48,h*.24,w*.96,h*.10);
+       ctx.fillRect(-w*.40,h*.38,w*.80,h*.10);
+       ctx.fillStyle='#f4b325';
+       for(const x of [-w*.32,-w*.12,w*.12,w*.32]){ctx.beginPath();ctx.arc(x,-h*.12,size*.06,0,Math.PI*2);ctx.fill();}
+     }else if(kind==='event'){
+       const balloons=[
+         {x:-size*.18,y:-size*.02,r:size*.16,c:'#82d83a'},
+         {x:size*.18,y:-size*.01,r:size*.16,c:'#ffd126'},
+         {x:0,y:size*.02,r:size*.17,c:'#33b7ef'},
+         {x:-size*.02,y:-size*.18,r:size*.17,c:'#ff8e1a'}
+       ];
+       for(const b of balloons){
+         ctx.beginPath();ctx.fillStyle=b.c;ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+         ctx.beginPath();ctx.moveTo(b.x,b.y+b.r*.95);ctx.lineTo(0,size*.36);ctx.strokeStyle='rgba(50,97,133,.8)';ctx.lineWidth=Math.max(2,size*.024);ctx.stroke();
+         ctx.beginPath();ctx.fillStyle='rgba(255,255,255,.55)';ctx.arc(b.x-b.r*.22,b.y-b.r*.22,b.r*.18,0,Math.PI*2);ctx.fill();
+       }
+     }
+     ctx.restore();
+   }
+   function addCircleBadgeEntry(key,image,kind){
+     if(entries.has(key))return;
+     const circle=120,pad=18,total=circle+pad*2;
+     const slot=reserve(total,total);if(!slot)return;
+     const boxX=slot.x,boxY=slot.y,boxW=slot.w,boxH=slot.h;
+     const cx=boxX+boxW/2,cy=boxY+boxH/2,r=circle/2;
+     const theme=kind==='awards'
+       ?{ring:'#f1ac1a',fill:'#fffaf0',sparkle:'rgba(255,214,102,.98)',glow:'rgba(255,190,70,.35)'}
+       :(kind==='event'
+         ?{ring:'#ff8f1f',fill:'#fffaf2',sparkle:'rgba(255,207,97,.98)',glow:'rgba(255,166,74,.34)'}
+         :{ring:'#6e51ff',fill:'#fbf9ff',sparkle:'rgba(163,229,255,.98)',glow:'rgba(122,103,255,.34)'});
+     drawSparkles(boxX+6,boxY+6,boxW-12,boxH-12,theme.sparkle,kind==='awards'?'awards':(kind==='event'?'event':'default'));
+     ctx.save();
+     ctx.shadowColor=theme.glow;
+     ctx.shadowBlur=22;
+     ctx.fillStyle='rgba(255,255,255,.98)';
+     ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+     ctx.restore();
+     const ringGrad=ctx.createLinearGradient(cx,cy-r,cx,cy+r);
+     ringGrad.addColorStop(0,'#ffffff');
+     ringGrad.addColorStop(1,theme.fill);
+     ctx.fillStyle=ringGrad;
+     ctx.beginPath();ctx.arc(cx,cy,r-5,0,Math.PI*2);ctx.fill();
+     ctx.lineWidth=7;
+     ctx.strokeStyle=theme.ring;
+     ctx.beginPath();ctx.arc(cx,cy,r-5,0,Math.PI*2);ctx.stroke();
+     ctx.lineWidth=2;
+     ctx.strokeStyle='rgba(255,255,255,.9)';
+     ctx.beginPath();ctx.arc(cx,cy,r-12,Math.PI*.82,Math.PI*1.82);ctx.stroke();
+     const iconSize=circle*.62;
+     if(image){
+       const ratio=(image.width||1)/(image.height||1);
+       let drawW=iconSize,drawH=iconSize/ratio;
+       if(drawH>iconSize){drawH=iconSize;drawW=drawH*ratio;}
+       const drawX=cx-drawW/2,drawY=cy-drawH/2;
+       ctx.save();
+       ctx.beginPath();ctx.arc(cx,cy,r-16,0,Math.PI*2);ctx.clip();
+       ctx.drawImage(image,drawX,drawY,drawW,drawH);
+       ctx.restore();
+     }else{
+       drawBadgeFallbackIcon(kind,cx,cy,iconSize);
+     }
      entries.set(key,{u0:slot.x/canvas.width,v0:1-(slot.y+slot.h)/canvas.height,u1:(slot.x+slot.w)/canvas.width,v1:1-slot.y/canvas.height,w:slot.w/2,h:slot.h/2});
    }
    for(const item of boothCatalog){const lines=boothLabelLines(item);if(lines.length)addLinesEntry('__label_'+item.booth,lines,lines.length>1?110:62,lines.length>1?34:26,14);}
-   addImageEntry('__badge_premium',badgeImages.premium,'premium');
-   addImageEntry('__badge_awards',badgeImages.awards,'awards');
-   addImageEntry('__badge_event',badgeImages.event,'event');
+   addCircleBadgeEntry('__badge_premium',badgeImages.premium,'premium');
+   addCircleBadgeEntry('__badge_awards',badgeImages.awards,'awards');
+   addCircleBadgeEntry('__badge_event',badgeImages.event,'event');
    addLinesEntry('__program_soon',[{text:'◷ 곧 행사',font:'700 24px Arial, sans-serif',fill:'#f59e0b',lineHeight:32,strokeWidth:8}],104,24,12);
    addLinesEntry('__program_live',[{text:'● 행사중',font:'700 24px Arial, sans-serif',fill:'#ef3340',lineHeight:32,strokeWidth:8}],100,24,12);
    return {canvas,entries};
@@ -265,7 +354,7 @@
          transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide,
          uniforms:{u_matrix:{value:new THREE.Matrix4()},u_viewport:{value:new THREE.Vector2(1,1)},u_texture:{value:this.texture},u_pixelScale:{value:1},u_time:{value:0}},
          vertexShader:
-           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;attribute vec4 a_motion;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float pulse=a_effect.y!=0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);float angle=u_time*a_motion.y;float cs=cos(angle);float sn=sin(angle);vec2 local=vec2(a_offset.x*cs-a_offset.y*sn,a_offset.x*sn+a_offset.y*cs)*scale;local.y+=a_motion.x+sin(u_time*a_motion.w+a_effect.z)*a_motion.z;vec2 ndc=(local*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
+           'precision highp float;uniform mat4 u_matrix;uniform vec2 u_viewport;uniform float u_pixelScale;uniform float u_time;attribute vec3 position;attribute vec2 a_offset;attribute vec2 uv;attribute vec4 a_effect;varying vec2 v_uv;varying float v_glow;void main(){vec4 clip=u_matrix*vec4(position,1.0);float animated=a_effect.y!=0.0?1.0:0.0;float pulse=animated>0.0?sin(u_time*3.2+a_effect.z)*a_effect.y:0.0;float scale=max(0.05,a_effect.x+pulse);float bob=animated>0.0?sin(u_time*2.0+a_effect.z)*6.0:0.0;vec2 localOffset=vec2(a_offset.x*scale,(a_offset.y+bob)*scale);vec2 ndc=(localOffset*u_pixelScale/u_viewport)*2.0;clip.xy+=ndc*clip.w;gl_Position=clip;v_uv=uv;v_glow=a_effect.w>0.0?max(0.0,sin(u_time*4.8+a_effect.z))*a_effect.w:0.0;}',
          fragmentShader:
            'precision highp float;uniform sampler2D u_texture;varying vec2 v_uv;varying float v_glow;void main(){vec4 c=texture2D(u_texture,v_uv);if(c.a<0.02)discard;c.rgb=mix(c.rgb,vec3(1.0),min(0.34,v_glow));c.rgb*=1.0+v_glow*0.22;gl_FragColor=c;}'
        });
@@ -294,32 +383,16 @@
        this.texture=new THREE.CanvasTexture(atlas.canvas);this.texture.flipY=true;this.texture.colorSpace=THREE.SRGBColorSpace;this.texture.minFilter=THREE.LinearFilter;this.texture.magFilter=THREE.LinearFilter;this.texture.needsUpdate=true;
        this.material.uniforms.u_texture.value=this.texture;
        refreshBoothTopFeatureIndex();
-       const positions=[],offsets=[],uvs=[],effects=[],motions=[],outlinePositions=[],verticalPositions=[];
+       const positions=[],offsets=[],uvs=[],effects=[],outlinePositions=[],verticalPositions=[];
        this.hasAnimatedBadges=false;
        const addQuad=(coord,height,entry,screenY=0,effect=null)=>{
          const mc=maplibregl.MercatorCoordinate.fromLngLat({lng:Number(coord[0]),lat:Number(coord[1])},height);
          const hw=entry.w/2,hh=entry.h/2;
-         const fx=effect||{scale:1,pulse:0,phase:0,glow:0,spin:0,bob:0,bobSpeed:0};
-         // 회전은 배지 중심을 기준으로 하고, screenY는 회전 후 화면 위쪽 이동값으로 적용합니다.
-         const q=[[-hw,-hh,entry.u0,entry.v0],[hw,-hh,entry.u1,entry.v0],[hw,hh,entry.u1,entry.v1],[-hw,-hh,entry.u0,entry.v0],[hw,hh,entry.u1,entry.v1],[-hw,hh,entry.u0,entry.v1]];
-         for(const v of q){
-           positions.push(mc.x,mc.y,mc.z);
-           offsets.push(v[0],v[1]);
-           uvs.push(v[2],v[3]);
-           effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);
-           motions.push(screenY,fx.spin||0,fx.bob||0,fx.bobSpeed||0);
-         }
+         const fx=effect||{scale:1,pulse:0,phase:0,glow:0};
+         const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];
+         for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}
        };
-       const badgeEffectFor=(kind,seed=0)=>({
-         scale:1,
-         pulse:kind==='event'?0.18:0.16,
-         phase:seed,
-         glow:kind==='awards'?1.45:1.35,
-         // 프리미엄은 천천히 한 바퀴 회전, 어워즈는 부드럽게 부유, 이벤트는 조금 더 크게 통통 움직입니다.
-         spin:kind==='premium'?1.35:0,
-         bob:kind==='premium'?4:(kind==='awards'?8:11),
-         bobSpeed:kind==='premium'?2.0:(kind==='awards'?2.4:3.4)
-       });
+       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.14:(kind==='premium'?0.11:0.12),phase:seed,glow:kind==='awards'?1.6:(kind==='event'?1.48:1.55)});
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
@@ -357,7 +430,6 @@
        this.geometry.setAttribute('a_offset',new THREE.Float32BufferAttribute(offsets,2));
        this.geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
        this.geometry.setAttribute('a_effect',new THREE.Float32BufferAttribute(effects,4));
-       this.geometry.setAttribute('a_motion',new THREE.Float32BufferAttribute(motions,4));
        this.geometry.setDrawRange(0,positions.length/3);this.geometry.computeBoundingSphere();
        this.outlineGeometry.setAttribute('position',new THREE.Float32BufferAttribute(outlinePositions,3));this.outlineGeometry.setDrawRange(0,outlinePositions.length/3);this.outlineGeometry.computeBoundingSphere();
        this.verticalGeometry.setAttribute('position',new THREE.Float32BufferAttribute(verticalPositions,3));this.verticalGeometry.setDrawRange(0,verticalPositions.length/3);this.verticalGeometry.computeBoundingSphere();
