@@ -403,8 +403,8 @@
  function boothLabelLines(item){
    const opts=getDisplayOptions();
    const lines=[];
-   if(opts.showBoothNumber!==false&&item.booth)lines.push({text:String(item.booth),font:'700 28px Arial, sans-serif',fill:'#15243b',lineHeight:39,strokeWidth:9});
-   if(opts.showCompanyName&&item.name)lines.push({text:String(item.name),font:opts.showBoothNumber!==false?'600 21px Arial, sans-serif':'700 25px Arial, sans-serif',fill:'#1f3a5b',lineHeight:opts.showBoothNumber!==false?28:34,strokeWidth:7});
+   if(opts.showBoothNumber!==false&&item.booth)lines.push({text:String(item.booth),font:'700 32px Arial, sans-serif',fill:'#15243b',lineHeight:39,strokeWidth:9});
+   if(opts.showCompanyName&&item.name)lines.push({text:String(item.name),font:opts.showBoothNumber!==false?'600 23px Arial, sans-serif':'700 27px Arial, sans-serif',fill:'#1f3a5b',lineHeight:opts.showBoothNumber!==false?28:34,strokeWidth:7});
    return lines;
  }
  function boothLabelText(item){return boothLabelLines(item).map(line=>line.text).join('\n')}
