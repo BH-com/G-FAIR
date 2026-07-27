@@ -487,7 +487,7 @@
            pending.item.coord,
            pending.top+4.2,
            pending.badge,
-           pending.entry?48:23,
+           pending.entry?60:29,
            badgeEffectFor(pending.kind,pending.seed)
          );
          this.hasAnimatedBadges=true;
