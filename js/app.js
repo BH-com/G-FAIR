@@ -303,7 +303,7 @@
          const q=[[-hw,-hh+screenY,entry.u0,entry.v0],[hw,-hh+screenY,entry.u1,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,-hh+screenY,entry.u0,entry.v0],[hw,hh+screenY,entry.u1,entry.v1],[-hw,hh+screenY,entry.u0,entry.v1]];
          for(const v of q){positions.push(mc.x,mc.y,mc.z);offsets.push(v[0],v[1]);uvs.push(v[2],v[3]);effects.push(fx.scale||1,fx.pulse||0,fx.phase||0,fx.glow||0);}
        };
-       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.11:0.09,phase:seed,glow:kind==='awards'?0.85:0.72});
+       const badgeEffectFor=(kind,seed=0)=>({scale:1,pulse:kind==='event'?0.18:0.16,phase:seed,glow:kind==='awards'?1.45:1.35});
        const displayOptions=getDisplayOptions();
        const runtimeSpecialBooths=getSpecialBooths();
        const programBadges=activeProgramBadgeMap();
