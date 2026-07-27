@@ -139,18 +139,17 @@
    threeLoadPromise=import(url);
    return threeLoadPromise;
  }
+ const MAP_LABEL_FONT_SCALE=1.5;
  function threeLabelScaleForZoom(zoom){
    const z=Number(zoom)||0;
-   // 전체 전시장 배치를 보는 축소 구간에서는 부스 형태가 우선입니다.
-   if(z<=12.2)return 0.22;
-   // 두 번째 참고 이미지 수준까지 라벨을 서서히 키웁니다.
+   // 기존 줌 구간과 증감 곡선은 유지하고, 최종 글자 크기만 1.5배 확대합니다.
+   if(z<=12.2)return 0.22*MAP_LABEL_FONT_SCALE;
    if(z<15.4){
      const t=Math.max(0,Math.min(1,(z-12.2)/(15.4-12.2)));
      const eased=t*t*(3-2*t);
-     return 0.22+(0.90-0.22)*eased;
+     return (0.22+(0.90-0.22)*eased)*MAP_LABEL_FONT_SCALE;
    }
-   // 이 구간부터는 지점 저장·길찾기 수정본의 기존 크기를 그대로 사용합니다.
-   return 1.04;
+   return 1.04*MAP_LABEL_FONT_SCALE;
  }
  function makeThreeLabelAtlas(){
    const canvas=document.createElement('canvas');canvas.width=4096;canvas.height=2048;
@@ -464,7 +463,7 @@ function rebuildBoothCatalog(){
  function openSelection(item,id,coord){const place=programPlaceForBooth(item.booth);if(place){openProgramPlace(place,item,id,item.coord||coord);return}clearSelected();selectedId=id;selectedBoothKey=String(item.booth||'');selectedLabel=coord?{...item,coord}:item;refreshSelectedBoothColor();document.getElementById('panelBooth').textContent=item.booth||'-';document.getElementById('panelCompany').textContent=item.name||'기업명 없음';document.getElementById('panelCategory').textContent=item.category||'품목 미등록';updateBoothDetail(item);document.getElementById('stagePanel')?.classList.remove('open');panel.classList.add('open');setStatus(`선택: ${item.booth||''} ${item.name||''}`);rebuildThreeLabels();}
  function findFeatureId(booth){const index=(data.booths?.features||[]).findIndex(feature=>String(feature.properties?.booth||'')===String(booth||''));if(index<0)return null;const feature=data.booths.features[index];return feature.id??feature.properties?._editId??index;}
  function selectLabel(item,fly=true){const id=findFeatureId(item.booth);openSelection(item,id,item.coord);if(fly)map.easeTo({center:item.coord,zoom:15.55,pitch:48,bearing:map.getBearing(),duration:650});}
- function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?12:10);}
+ function updateLabelDetail(){if(map.getLayer('booth-labels'))map.setLayoutProperty('booth-labels','text-size',map.getZoom()>=15.4?18:15);}
  map.on('load',()=>{
    rebuildBoothCatalog();
    map.addSource('booths',{type:'geojson',data:boothDisplayGeoJSON()});
@@ -484,7 +483,7 @@ function rebuildBoothCatalog(){
      'line-opacity':.9
    }});
    map.addSource('booth-label-points',{type:'geojson',data:boothLabelGeoJSON()});
-   map.addLayer({id:'booth-labels',type:'symbol',source:'booth-label-points',layout:{'text-field':['coalesce',['get','text'],''],'text-size':10,'text-font':['Open Sans Bold'],'text-anchor':'center','text-allow-overlap':false,'text-ignore-placement':false,'symbol-sort-key':0},paint:{'text-color':'#15243b','text-halo-color':'#ffffff','text-halo-width':1.25}});
+   map.addLayer({id:'booth-labels',type:'symbol',source:'booth-label-points',layout:{'text-field':['coalesce',['get','text'],''],'text-size':15,'text-font':['Open Sans Bold'],'text-anchor':'center','text-allow-overlap':false,'text-ignore-placement':false,'symbol-sort-key':0},paint:{'text-color':'#15243b','text-halo-color':'#ffffff','text-halo-width':1.25}});
    updateBoothLabelLayer();
    initThreeLabels();
    map.addSource('routes',{type:'geojson',data:routeGeoFromGraph()});
