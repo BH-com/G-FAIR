@@ -471,7 +471,7 @@
          const programState=programBadges.get(booth);
          const programBadge=programState?atlas.entries.get(programState.status==='live'?'__program_live':'__program_soon'):null;
          if(programBadge){
-           const programOffset=badge?(entry?194:160):(entry?28:0);
+           const programOffset=badge?(entry?170:149):(entry?28:0);
            pendingPrograms.push({item,top,programBadge,programOffset});
          }
        }
@@ -487,7 +487,7 @@
            pending.item.coord,
            pending.top+4.2,
            pending.badge,
-           pending.entry?72:34,
+           pending.entry?48:23,
            badgeEffectFor(pending.kind,pending.seed)
          );
          this.hasAnimatedBadges=true;
