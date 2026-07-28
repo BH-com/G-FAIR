@@ -187,8 +187,8 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
   z-index:4;
   top:0;
   left:50%;
-  width:68px;
-  height:24px;
+  width:160px;
+  height:30px;
   padding:0;
   border:0;
   border-radius:999px;
@@ -202,8 +202,8 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
   content:"";
   position:absolute;
   left:50%;
-  top:7px;
-  width:38px;
+  top:9px;
+  width:42px;
   height:4px;
   border-radius:999px;
   background:#aeb8c5;
@@ -520,8 +520,8 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
     z-index:4;
     top:0;
     left:50%;
-    width:76px;
-    height:25px;
+    width:160px;
+    height:30px;
     padding:0;
     border:0;
     border-radius:999px;
@@ -534,8 +534,8 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
     content:"";
     position:absolute;
     left:50%;
-    top:8px;
-    width:42px;
+    top:10px;
+    width:46px;
     height:4px;
     border-radius:999px;
     background:#aeb8c5;
@@ -575,5 +575,83 @@ body{background:#eef3f9}.top{background:linear-gradient(115deg,#082b67,#1454a6);
   }
   .bottom-nav button[data-mobile-action="route"] .route-nav-icon{
     transform:translateY(-1px);
+  }
+}
+
+
+/* 2026-07-27: wider sheet handles, searchable destination, and mobile-landscape header cleanup. */
+.route-main-row>.route-origin-combobox{flex:1 1 0;min-width:0}
+.route-destination-combobox .route-destination-results{left:auto;right:0}
+@media(max-width:760px){
+  body[data-mobile-mode="route"] .route-main-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+  body[data-mobile-mode="route"] .route-origin-combobox input{padding-left:8px;padding-right:50px}
+  .panel-grabber,.modal-grabber{width:min(44vw,180px)}
+}
+@media (orientation:landscape) and (max-height:600px) and (pointer:coarse){
+  html,body{width:100%;height:var(--app-vh,100dvh);max-height:var(--app-vh,100dvh);overflow:hidden!important;overscroll-behavior:none}
+  body{position:fixed;inset:0}
+  .app{height:var(--app-vh,100dvh);overflow:hidden}
+  .top{padding:5px 8px}
+  .brand-mark{width:30px;height:30px}
+  .brand-copy small,.main-nav{display:none!important}
+  .controls{display:none!important}
+  body[data-mobile-mode="search"] .controls{display:flex!important}
+  .controls button:not(#searchBtn){display:none!important}
+  .wrap{padding-bottom:58px;overflow:hidden}
+  .bottom-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:absolute;left:8px;right:8px;bottom:6px;z-index:12;background:#fff;border-radius:14px;box-shadow:0 6px 24px #0003;overflow:hidden}
+  .bottom-nav button{border:0;background:#fff;padding:6px 2px 5px;color:#5f6d81;font-size:9px;font-weight:900}
+  .bottom-nav-icon{width:20px;height:20px;margin:0 auto 2px;display:grid!important;place-items:center}
+  .bottom-nav-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .bottom-nav button.active{background:linear-gradient(145deg,#174ea6,#1769e0);color:#fff}
+  .route-card{display:none}
+  body[data-mobile-mode="route"] .route-card{display:block;left:8px;right:48px;top:6px;width:auto;max-width:none;padding:9px}
+  body[data-mobile-mode="route"] .route-main-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+  body[data-mobile-mode="map"] .results,body[data-mobile-mode="route"] .results,body[data-mobile-mode="expo"] .results{display:none!important}
+  .status{display:none!important}
+  .panel-grabber,.modal-grabber{width:min(38vw,190px)}
+}
+
+
+/* 2026-07-28: larger sheet handle, flexible booth search, and UI pinch-zoom lock. */
+html,body{
+  touch-action:pan-x pan-y;
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+@media(max-width:760px){
+  .booth-detail-panel,
+  .stage-panel,
+  .route-card,
+  .bottom-nav,
+  .top,
+  .modal{touch-action:pan-y}
+
+  /* The visible bar stays compact, while the draggable touch target spans the header. */
+  .booth-detail-panel .panel-grabber{
+    left:0;
+    right:56px;
+    width:auto;
+    height:48px;
+    transform:none;
+  }
+  .booth-detail-panel .panel-grabber::after{
+    left:calc(50% + 28px);
+    top:9px;
+  }
+  .booth-detail-panel .panel-close{z-index:6}
+
+  .booth-detail-panel .detail-grid,
+  .stage-panel .detail-grid,
+  .modal-body,
+  .route-start-results,
+  .results{touch-action:pan-y}
+}
+@media (orientation:landscape) and (max-height:600px) and (pointer:coarse){
+  .booth-detail-panel .panel-grabber{
+    left:0;
+    right:54px;
+    width:auto;
+    height:44px;
+    transform:none;
   }
 }

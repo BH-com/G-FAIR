@@ -59,7 +59,7 @@
  }
  map.addControl(new maplibregl.NavigationControl({showZoom:true,showCompass:true,visualizePitch:true}),'top-right');
  map.addControl(new ViewModeControl(),'top-right');
- let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0, routeStartChoice=null, pendingRouteAfterOrigin=false; const specialMarkers=[]; let boothCatalog=[];
+ let bounds=null, selectedId=null, selectedBoothKey='', selectedLabel=null, activeProgramPlace=null, activeRoute=null, activeRouteCoords=[], startMarker=null, endMarker=null, routeAnimationFrame=0, routeAnimationStarted=0, routeStartChoice=null, routeDestinationChoice=null, pendingRouteAfterOrigin=false; const specialMarkers=[]; let boothCatalog=[];
  let boothWebGLLabelLayer=null; let boothTopFeatureByBooth=new Map();
  let boothThreeLayer=null, threeLoadPromise=null;
  const programUrlParams=new URLSearchParams(location.search);
@@ -717,11 +717,27 @@ function rebuildBoothCatalog(){
    }));
    return [...locations,...booths];
  }
+ function routeDestinationItems(){
+   const items=routeOriginItems();
+   const booths=items.filter(item=>item.type==='booth');
+   const locations=items.filter(item=>item.type==='location');
+   return [...booths,...locations];
+ }
+ function normalizeRouteSearch(value){
+   return String(value||'')
+     .normalize('NFKC')
+     .toLowerCase()
+     .replace(/[\s\-_.·ㆍ/\\]+/g,'');
+ }
+ function routeItemMatches(item,query){
+   const q=normalizeRouteSearch(query);if(!q)return true;
+   return normalizeRouteSearch(item?.search).includes(q)||normalizeRouteSearch(item?.label).includes(q);
+ }
  function matchingRouteOrigins(query){
-   const q=String(query||'').trim().toLowerCase();
+   const q=String(query||'').trim();
    const items=routeOriginItems();
    if(!q)return items.filter(item=>item.type==='location').slice(0,24);
-   return items.filter(item=>item.search.includes(q)||item.label.toLowerCase().includes(q)).slice(0,24);
+   return items.filter(item=>routeItemMatches(item,q)).slice(0,24);
  }
  function setRouteOriginDropdownOpen(open){
    const field=document.getElementById('routeStartSearch'),wrap=document.getElementById('routeOriginCombobox'),list=document.getElementById('routeStartResults'),toggle=document.getElementById('routeStartToggle');
@@ -764,6 +780,54 @@ function rebuildBoothCatalog(){
    setRouteOriginDropdownOpen(true);
    list.querySelectorAll('.route-start-result').forEach((button,index)=>button.addEventListener('click',()=>selectRouteStartChoice(items[index])));
  }
+ function matchingRouteDestinations(query){
+   const q=String(query||'').trim(),items=routeDestinationItems();
+   if(!q)return items.slice(0,24);
+   return items.filter(item=>routeItemMatches(item,q)).slice(0,24);
+ }
+ function setRouteDestinationDropdownOpen(open){
+   const field=document.getElementById('routeDestinationSearch'),wrap=document.getElementById('routeDestinationCombobox'),list=document.getElementById('routeDestinationResults'),toggle=document.getElementById('routeDestinationToggle');
+   wrap?.classList.toggle('open',!!open);list?.classList.toggle('open',!!open);
+   field?.setAttribute('aria-expanded',open?'true':'false');toggle?.setAttribute('aria-expanded',open?'true':'false');
+ }
+ function clearRouteDestinationSearch({keepFocus=false,openList=false}={}){
+   routeDestinationChoice=null;
+   const field=document.getElementById('routeDestinationSearch'),wrap=document.getElementById('routeDestinationCombobox'),list=document.getElementById('routeDestinationResults'),select=document.getElementById('destSelect');
+   if(select)select.value='';
+   if(field){field.value='';field.classList.remove('has-choice');if(!keepFocus)field.blur();}
+   wrap?.classList.remove('has-value');if(list)list.innerHTML='';setRouteDestinationDropdownOpen(false);
+   if(keepFocus&&field){field.focus({preventScroll:true});if(openList)renderRouteDestinationResults();}
+ }
+ function selectRouteDestinationChoice(choice){
+   if(!choice||!routeCoordValid(choice.coord))return;
+   routeDestinationChoice={...choice,coord:[Number(choice.coord[0]),Number(choice.coord[1])]};
+   const field=document.getElementById('routeDestinationSearch'),wrap=document.getElementById('routeDestinationCombobox'),list=document.getElementById('routeDestinationResults'),select=document.getElementById('destSelect');
+   if(field){field.value=choice.label||'';field.classList.add('has-choice');field.setAttribute('aria-expanded','false');}
+   wrap?.classList.add('has-value');if(list)list.innerHTML='';setRouteDestinationDropdownOpen(false);
+   if(select){
+     const boothIndex=choice.type==='booth'?boothCatalog.findIndex(item=>item.booth===choice.booth):-1;
+     select.value=boothIndex>=0?String(boothIndex):'';
+   }
+ }
+ function syncRouteDestinationComboboxFromSelect(){
+   const select=document.getElementById('destSelect');if(!select||select.value==='')return;
+   const item=boothCatalog[Number(select.value)];if(!item||!routeCoordValid(item.coord))return;
+   selectRouteDestinationChoice({type:'booth',coord:item.coord,booth:String(item.booth||''),name:String(item.name||''),label:`${item.booth||''} · ${item.name||'기업명 없음'}`,search:''});
+ }
+ function resolveRouteDestination(){
+   if(routeDestinationChoice&&routeCoordValid(routeDestinationChoice.coord))return routeDestinationChoice;
+   const select=document.getElementById('destSelect');if(!select||select.value==='')return null;
+   const item=boothCatalog[Number(select.value)];
+   return item&&routeCoordValid(item.coord)?{type:'booth',coord:item.coord,booth:String(item.booth||''),name:String(item.name||''),label:`${item.booth||''} · ${item.name||'기업명 없음'}`}:null;
+ }
+ function renderRouteDestinationResults(){
+   const field=document.getElementById('routeDestinationSearch'),list=document.getElementById('routeDestinationResults');if(!field||!list)return;
+   const q=field.classList.contains('has-choice')?'':field.value.trim(),items=matchingRouteDestinations(q);
+   if(!items.length){list.innerHTML=`<div class="route-start-empty">${q?'일치하는 부스·기업·지점이 없습니다.':'등록된 도착지가 없습니다.'}</div>`;setRouteDestinationDropdownOpen(true);return;}
+   list.innerHTML=items.map((item,index)=>`<button type="button" class="route-start-result" data-index="${index}" data-type="${item.type}" role="option"><b>${escapeHtml(item.label)}</b><small>${item.type==='booth'?'부스 도착':'등록 지점 도착'}</small></button>`).join('');
+   setRouteDestinationDropdownOpen(true);
+   list.querySelectorAll('.route-start-result').forEach((button,index)=>button.addEventListener('click',()=>selectRouteDestinationChoice(items[index])));
+ }
  function routeCoordValid(coord){return Array.isArray(coord)&&coord.length>=2&&Number.isFinite(Number(coord[0]))&&Number.isFinite(Number(coord[1]))}
  function routeGraphSnapshot(){
    const vertices=(routeGraph?.vertices||[]).filter(v=>routeCoordValid(v?.coord)).map(v=>({id:String(v.id),coord:[Number(v.coord[0]),Number(v.coord[1])]}));
@@ -805,7 +869,7 @@ function rebuildBoothCatalog(){
    const coords=ids.map(id=>coordsById.get(id)).filter(routeCoordValid).filter((coord,index,array)=>index===0||Math.hypot(coord[0]-array[index-1][0],coord[1]-array[index-1][1])>1e-12);
    return {coords,distance:dist.get(END),startSnap:startSnap.coord,endSnap:endSnap.coord};
  }
- function clearRoute(){pendingRouteAfterOrigin=false;activeRoute=null;activeRouteCoords=[];if(routeAnimationFrame){cancelAnimationFrame(routeAnimationFrame);routeAnimationFrame=0;}if(map.getSource('active-route'))map.getSource('active-route').setData({type:'FeatureCollection',features:[]});if(map.getSource('route-particles'))map.getSource('route-particles').setData({type:'FeatureCollection',features:[]});if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}document.getElementById('routeInfo').textContent='시작 위치와 목적지 부스를 선택하세요.';}
+ function clearRoute(){pendingRouteAfterOrigin=false;activeRoute=null;activeRouteCoords=[];if(routeAnimationFrame){cancelAnimationFrame(routeAnimationFrame);routeAnimationFrame=0;}if(map.getSource('active-route'))map.getSource('active-route').setData({type:'FeatureCollection',features:[]});if(map.getSource('route-particles'))map.getSource('route-particles').setData({type:'FeatureCollection',features:[]});if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}document.getElementById('routeInfo').textContent='출발지와 도착지를 선택하거나 검색하세요.';}
  function routeTo(startCoord,dest,startLabel='출발지'){
    const destination=dest&&routeCoordValid(dest.coord)?[Number(dest.coord[0]),Number(dest.coord[1])]:null;
    const start=routeCoordValid(startCoord)?[Number(startCoord[0]),Number(startCoord[1])]:null;
@@ -817,7 +881,7 @@ function rebuildBoothCatalog(){
    const se=document.createElement('div');se.className='route-dot start';startMarker=new maplibregl.Marker({element:se,anchor:'center'}).setLngLat(start).addTo(map);
    const ee=document.createElement('div');ee.className='route-dot end';endMarker=new maplibregl.Marker({element:ee,anchor:'center'}).setLngLat(destination).addTo(map);
    const rb=new maplibregl.LngLatBounds();coords.forEach(c=>rb.extend(c));const sheetVisible=isMobileLayout()&&panel?.classList.contains('open');const sheetHeight=sheetVisible?panel.getBoundingClientRect().height:0;const routeTopPadding=isMobileLayout()&&mobileMode==='route'?178:140;const routeBottomPadding=sheetVisible?Math.min(330,Math.max(150,Math.round(sheetHeight+82))):100;map.fitBounds(rb,{padding:{top:routeTopPadding,bottom:routeBottomPadding,left:54,right:54},pitch:48,bearing:map.getBearing(),duration:700});
-   document.getElementById('routeInfo').textContent=`${startLabel} → ${dest.booth||'목적지'} · 경로점 ${found.coords.length}개`;setStatus('');
+   document.getElementById('routeInfo').textContent=`${startLabel} → ${dest.label||dest.booth||'도착지'} · 경로점 ${found.coords.length}개`;setStatus('');
  }
  function clearRouteMarkersOnly(){if(startMarker){startMarker.remove();startMarker=null;}if(endMarker){endMarker.remove();endMarker=null;}}
  function pointAlongRoute(coords,t){if(!coords||coords.length<2)return coords?.[0]||[0,0];const lengths=[];let total=0;for(let i=1;i<coords.length;i++){const dx=coords[i][0]-coords[i-1][0],dy=coords[i][1]-coords[i-1][1];const len=Math.hypot(dx,dy);lengths.push(len);total+=len;}if(total<=0)return coords[0];let target=((t%1)+1)%1*total;for(let i=0;i<lengths.length;i++){const len=lengths[i];if(target<=len||i===lengths.length-1){const r=len?target/len:0;return [coords[i][0]+(coords[i+1][0]-coords[i][0])*r,coords[i][1]+(coords[i+1][1]-coords[i][1])*r];}target-=len;}return coords[coords.length-1];}
@@ -841,7 +905,8 @@ function rebuildBoothCatalog(){
  }
  function resetBoothSheet(){setBoothSheetExpanded(false,{scrollTop:true});}
  function mobileBoothSheetMetrics(){
-   const viewport=Math.max(320,Number(window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight||0));
+   const cssViewport=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-vh'));
+   const viewport=Math.max(320,Number(cssViewport||stableMobileViewportHeight||window.innerHeight||document.documentElement.clientHeight||0));
    const collapsed=Math.max(215,Math.min(viewport*.30,255));
    const expanded=Math.max(collapsed,viewport-118);
    return{viewport,collapsed,expanded,collapseTravel:Math.max(90,expanded-collapsed)};
@@ -926,9 +991,35 @@ function rebuildBoothCatalog(){
    grabber.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='Escape'){event.preventDefault();closeExhibition();}});
    grabber.addEventListener('click',event=>{if(didDrag)event.preventDefault();});
  }
- function syncMobileViewportHeight(){
-   const height=Math.round(window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight||0);
-   if(height>0)document.documentElement.style.setProperty('--app-vh',`${height}px`);
+ let stableMobileViewportHeight=0;
+ function syncMobileViewportHeight({force=false}={}){
+   const viewport=window.visualViewport;
+   const scale=Number(viewport?.scale||1);
+   const browserZoomed=Math.abs(scale-1)>.015;
+   const measured=Math.round((!browserZoomed&&viewport?.height)||window.innerHeight||document.documentElement.clientHeight||0);
+   if(browserZoomed&&stableMobileViewportHeight>0){
+     document.documentElement.style.setProperty('--app-vh',`${stableMobileViewportHeight}px`);
+     return false;
+   }
+   if(measured>0&&(force||!stableMobileViewportHeight||Math.abs(measured-stableMobileViewportHeight)>1)){
+     stableMobileViewportHeight=measured;
+     document.documentElement.style.setProperty('--app-vh',`${measured}px`);
+     return true;
+   }
+   return false;
+ }
+ function setupMobileViewportGestureLock(){
+   const uiSelector='.booth-detail-panel,.stage-panel,.route-card,.bottom-nav,.top,.modal-backdrop';
+   const isMapTarget=target=>target instanceof Element&&!!target.closest('#map');
+   const blockUiPinch=event=>{
+     if(!isMobileLayout())return;
+     if(event.touches&&event.touches.length>1&&event.target instanceof Element&&event.target.closest(uiSelector))event.preventDefault();
+   };
+   document.addEventListener('touchstart',blockUiPinch,{passive:false,capture:true});
+   document.addEventListener('touchmove',blockUiPinch,{passive:false,capture:true});
+   for(const type of ['gesturestart','gesturechange','gestureend']){
+     document.addEventListener(type,event=>{if(isMobileLayout()&&!isMapTarget(event.target))event.preventDefault();},{passive:false,capture:true});
+   }
  }
  function refreshSelectedBoothColor(){const source=map.getSource('booths');if(source)source.setData(boothDisplayGeoJSON());}
  function clearSelected(){selectedId=null;selectedBoothKey='';selectedLabel=null;activeProgramPlace=null;pendingRouteAfterOrigin=false;resetBoothSheet();panel.classList.remove('open');document.getElementById('stagePanel')?.classList.remove('open');document.body.classList.remove('booth-panel-open','booth-sheet-expanded');refreshSelectedBoothColor();rebuildThreeLabels();updateBottomNavState();}
@@ -998,7 +1089,7 @@ function rebuildBoothCatalog(){
      'text-halo-width':4,
      'text-halo-blur':0.5
    }});
-   const locations=rebuildLocationControls();const destSelect=document.getElementById('destSelect');destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');fit();updateLabelDetail();setStatus('');
+   const locations=rebuildLocationControls();const destSelect=document.getElementById('destSelect');destSelect.innerHTML='<option value="">도착지 선택·검색</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');fit();updateLabelDetail();setStatus('');
  });
  map.on('zoom',updateLabelDetail);
  map.on('click','booth-extrusion',e=>{const f=e.features&&e.features[0];if(!f)return;const item=boothCatalog.find(x=>x.booth===f.properties.booth)||{booth:f.properties.booth,name:f.properties.name,category:f.properties.category,coord:[e.lngLat.lng,e.lngLat.lat]};openSelection(item,f.id,[e.lngLat.lng,e.lngLat.lat]);});
@@ -1010,6 +1101,7 @@ function rebuildBoothCatalog(){
  input.addEventListener('input',renderResults);input.addEventListener('focus',renderResults);input.addEventListener('keydown',e=>{if(e.key==='Enter')search();if(e.key==='Escape')results.classList.remove('open');});document.getElementById('searchBtn').onclick=search;
  document.addEventListener('pointerdown',e=>{if(!e.target.closest('.search-box'))results.classList.remove('open');});
  const routeStartSearch=document.getElementById('routeStartSearch'),routeStartResults=document.getElementById('routeStartResults'),routeStartSearchClear=document.getElementById('routeStartSearchClear'),routeStartToggle=document.getElementById('routeStartToggle'),routeOriginCombobox=document.getElementById('routeOriginCombobox'),startSelectControl=document.getElementById('startSelect');
+ const routeDestinationSearch=document.getElementById('routeDestinationSearch'),routeDestinationResults=document.getElementById('routeDestinationResults'),routeDestinationClear=document.getElementById('routeDestinationClear'),routeDestinationToggle=document.getElementById('routeDestinationToggle'),routeDestinationCombobox=document.getElementById('routeDestinationCombobox'),destSelectControl=document.getElementById('destSelect');
  if(routeStartSearch){
    routeStartSearch.addEventListener('input',()=>{
      if(routeStartSearch.classList.contains('has-choice')){routeStartChoice=null;routeStartSearch.classList.remove('has-choice');if(startSelectControl)startSelectControl.value='';}
@@ -1028,8 +1120,26 @@ function rebuildBoothCatalog(){
  });
  routeStartSearchClear?.addEventListener('click',()=>clearRouteStartSearch({keepFocus:true,openList:true}));
  startSelectControl?.addEventListener('change',syncRouteStartComboboxFromSelect);
- document.addEventListener('pointerdown',event=>{if(!event.target.closest('.route-origin-combobox'))setRouteOriginDropdownOpen(false);});
- const mobileMedia=window.matchMedia('(max-width:760px)');
+ document.addEventListener('pointerdown',event=>{if(!event.target.closest('#routeOriginCombobox'))setRouteOriginDropdownOpen(false);if(!event.target.closest('#routeDestinationCombobox'))setRouteDestinationDropdownOpen(false);});
+ if(routeDestinationSearch){
+   routeDestinationSearch.addEventListener('input',()=>{
+     if(routeDestinationSearch.classList.contains('has-choice')){routeDestinationChoice=null;routeDestinationSearch.classList.remove('has-choice');if(destSelectControl)destSelectControl.value='';}
+     routeDestinationCombobox?.classList.toggle('has-value',!!routeDestinationSearch.value);renderRouteDestinationResults();
+   });
+   routeDestinationSearch.addEventListener('focus',()=>{if(routeDestinationSearch.classList.contains('has-choice'))routeDestinationSearch.select();renderRouteDestinationResults();});
+   routeDestinationSearch.addEventListener('keydown',event=>{
+     if(event.key==='Enter'){event.preventDefault();if(routeDestinationSearch.classList.contains('has-choice')){setRouteDestinationDropdownOpen(false);routeDestinationSearch.blur();return;}const first=matchingRouteDestinations(routeDestinationSearch.value)[0];if(first)selectRouteDestinationChoice(first);else setStatus('도착지 검색 결과가 없습니다.');}
+     else if(event.key==='Escape')setRouteDestinationDropdownOpen(false);
+     else if(event.key==='ArrowDown'){event.preventDefault();routeDestinationResults?.querySelector('.route-start-result')?.focus();}
+   });
+ }
+ routeDestinationToggle?.addEventListener('click',()=>{
+   if(routeDestinationResults?.classList.contains('open')){setRouteDestinationDropdownOpen(false);return;}
+   routeDestinationSearch?.focus({preventScroll:true});if(routeDestinationSearch?.classList.contains('has-choice'))routeDestinationSearch.select();renderRouteDestinationResults();
+ });
+ routeDestinationClear?.addEventListener('click',()=>clearRouteDestinationSearch({keepFocus:true,openList:true}));
+ destSelectControl?.addEventListener('change',syncRouteDestinationComboboxFromSelect);
+ const mobileMedia=window.matchMedia('(max-width:760px), (orientation:landscape) and (max-height:600px) and (pointer:coarse)');
  let mobileMode='map';
  function isMobileLayout(){return mobileMedia.matches;}
  function selectedBoothRouteTarget(){return selectedLabel&&!activeProgramPlace&&selectedLabel.booth&&routeCoordValid(selectedLabel.coord)?selectedLabel:null;}
@@ -1063,13 +1173,12 @@ function rebuildBoothCatalog(){
    requestAnimationFrame(()=>map.resize());
  }
  function runRouteFromControls({showMessages=true}={}){
-   const di=document.getElementById('destSelect').value,start=resolveRouteStart();
+   const start=resolveRouteStart(),destination=resolveRouteDestination();
    if(!start){
      if(showMessages){setStatus('출발 지점을 선택하거나 부스·기업·지점을 검색해 주세요.');document.getElementById('routeInfo').textContent='출발지 선택이 필요합니다.';}
      return false;
    }
-   if(di===''){if(showMessages)setStatus('목적지 부스를 선택하세요.');return false;}
-   const destination=boothCatalog[Number(di)];if(!destination)return false;
+   if(!destination){if(showMessages){setStatus('도착지를 선택하거나 검색해 주세요.');document.getElementById('routeInfo').textContent='도착지 선택이 필요합니다.';}return false;}
    pendingRouteAfterOrigin=false;routeTo(start.coord,destination,start.label);return true;
  }
  function maybeRunPendingRoute(){
@@ -1079,8 +1188,7 @@ function rebuildBoothCatalog(){
  function openRouteFromBottomNav(){
    const target=selectedBoothRouteTarget();
    if(target){
-     const idx=boothCatalog.findIndex(item=>item.booth===target.booth);
-     if(idx>=0)document.getElementById('destSelect').value=String(idx);
+     selectRouteDestinationChoice({type:'booth',coord:target.coord,booth:String(target.booth||''),name:String(target.name||''),label:`${target.booth||''} · ${target.name||'기업명 없음'}`,search:''});
      resetBoothSheet();panel.classList.add('open');document.body.classList.add('booth-panel-open');document.getElementById('stagePanel')?.classList.remove('open');
    }
    setMobileMode('route');
@@ -1099,15 +1207,16 @@ function rebuildBoothCatalog(){
      clearRoute();clearSelected();document.getElementById('expoModal')?.classList.remove('open');resetExpoModalDrag();setMobileMode('map',{closeModal:false});
    }else if(mode==='route')openRouteFromBottomNav();
    else if(mode==='expo')setMobileMode('expo',{closeModal:false});
+   else if(mode==='search'){clearSelected();setMobileMode('search',{focusSearch:true});}
    else setMobileMode(mode,{focusSearch:mode==='search'});
  }));
  mobileMedia.addEventListener?.('change',()=>{
    if(isMobileLayout())setMobileMode(mobileMode,{closeModal:false});
    else{delete document.body.dataset.mobileMode;requestAnimationFrame(()=>map.resize());}
  });
- syncMobileViewportHeight();setupBoothSheetGesture();setupExpoSheetGesture();
- window.visualViewport?.addEventListener('resize',()=>{syncMobileViewportHeight();requestAnimationFrame(()=>map.resize());});
- window.addEventListener('orientationchange',()=>setTimeout(()=>{syncMobileViewportHeight();map.resize();},80));
+ syncMobileViewportHeight({force:true});setupMobileViewportGestureLock();setupBoothSheetGesture();setupExpoSheetGesture();
+ window.visualViewport?.addEventListener('resize',()=>{if(syncMobileViewportHeight())requestAnimationFrame(()=>map.resize());});
+ window.addEventListener('orientationchange',()=>setTimeout(()=>{syncMobileViewportHeight({force:true});map.resize();},80));
  if(isMobileLayout())setMobileMode('map',{closeModal:false});
  document.getElementById('flatBtn').onclick=()=>map.easeTo({pitch:0,bearing:0,duration:550});document.getElementById('threeBtn').onclick=()=>map.easeTo({pitch:52,bearing:-28,duration:550});document.getElementById('resetBtn').onclick=()=>{clearSelected();fit();};
  document.getElementById('panelClose').onclick=clearSelected;const panelClearBtn=document.getElementById('panelClear');if(panelClearBtn)panelClearBtn.onclick=clearSelected;const panelFocusBtn=document.getElementById('panelFocus');if(panelFocusBtn)panelFocusBtn.onclick=()=>{if(selectedLabel?.coord)map.easeTo({center:selectedLabel.coord,zoom:18,pitch:52,bearing:map.getBearing(),duration:550});};
@@ -1125,14 +1234,14 @@ function rebuildBoothCatalog(){
    const source=map.getSource('routes');if(source)source.setData(routeGeoFromGraph());
    const locationSource=map.getSource('locations');if(locationSource)locationSource.setData(locationGeoJSON());
    rebuildLocationControls();
-   const destSelect=document.getElementById('destSelect');if(destSelect)destSelect.innerHTML='<option value="">목적지 부스</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');
+   const destSelect=document.getElementById('destSelect');if(destSelect)destSelect.innerHTML='<option value="">도착지 선택·검색</option>'+boothCatalog.map((l,i)=>`<option value="${i}">${escapeHtml(l.booth)} · ${escapeHtml(l.name||'')}</option>`).join('');
    if(openProgramBooth){const updated=programPlaceForBooth(openProgramBooth);if(updated){activeProgramPlace={...activeProgramPlace,...updated};renderProgramPlacePanel(activeProgramPlace)}else clearSelected()}
    programBadgeSignature='';refreshTimedProgramState(true);
    clearRoute();setStatus('');
  }
  window.addEventListener('storage',event=>{if(!event.key||!event.key.startsWith('finder.maplibre.project.'))return;window.FINDER_PROJECT_STORE.apply(window.FINDER_PROJECT_STORE.load());refreshFromProjectStore();});
  window.addEventListener('finder-project-live-update',()=>refreshFromProjectStore());
- window.addEventListener('resize',()=>{syncMobileViewportHeight();map.resize();});
+ window.addEventListener('resize',()=>{if(syncMobileViewportHeight())map.resize();});
  const content=window.FINDER_CONTENT||{companyDetails:{},stages:[],documents:[]};
  function getProgramNow(){return programTestNow?new Date(programTestNow.getTime()):new Date()}
  function localDateText(date=getProgramNow()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
